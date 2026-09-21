@@ -6,17 +6,13 @@ weird stuff.
 
 [![Build](https://github.com/jayluxferro/dns66/actions/workflows/build.yml/badge.svg)](https://github.com/jayluxferro/dns66/actions/workflows/build.yml)
 
-This is a maintained fork of the (archived) original DNS66 by Julian Andres
-Klode, kept current with modern Android tooling and platform requirements.
+This is a maintained fork of the original DNS66 by Julian Andres Klode
+(https://github.com/julian-klode/dns66, now archived), kept current with
+modern Android tooling and platform requirements.
 
 Installing
 ----------
-[<img src="https://f-droid.org/badge/get-it-on.png"
-      alt="Get it on F-Droid"
-      height="80">](https://f-droid.org/app/org.jak_linux.dns66)
-
-The original release history is available via F-Droid. This fork publishes
-APKs built automatically by GitHub Actions on the
+APKs are built automatically by GitHub Actions and published on the
 [releases page](https://github.com/jayluxferro/dns66/releases): every push to
 `main` produces debug and release APKs as build artifacts, and pushing a tag
 like `v0.6.9` creates a release with a signed APK (see below).
