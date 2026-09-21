@@ -4,8 +4,10 @@ This is a DNS-based host blocker for Android. In the default configuration,
 several widely-respected host files are used to block ads, malware, and other
 weird stuff.
 
-[![codecov](https://codecov.io/gh/julian-klode/dns66/branch/master/graph/badge.svg)](https://codecov.io/gh/julian-klode/dns66)
-[![Build Status](https://travis-ci.com/julian-klode/dns66.svg?branch=master)](https://travis-ci.com/julian-klode/dns66)
+[![Build](https://github.com/jayluxferro/dns66/actions/workflows/build.yml/badge.svg)](https://github.com/jayluxferro/dns66/actions/workflows/build.yml)
+
+This is a maintained fork of the (archived) original DNS66 by Julian Andres
+Klode, kept current with modern Android tooling and platform requirements.
 
 Installing
 ----------
@@ -13,9 +15,25 @@ Installing
       alt="Get it on F-Droid"
       height="80">](https://f-droid.org/app/org.jak_linux.dns66)
 
-You can either install it via F-Droid, using the official F-Droid repository, or you can use my personal repository at https://jak-linux.org/fdroid/repo which gets updates ASAP.
+The original release history is available via F-Droid. This fork publishes
+APKs built automatically by GitHub Actions on the
+[releases page](https://github.com/jayluxferro/dns66/releases): every push to
+`main` produces debug and release APKs as build artifacts, and pushing a tag
+like `v0.6.9` creates a release with a signed APK (see below).
 
-You can also download apk files in GitHub's download section. Currently, these are the same files as in my personal F-Droid repository, but that might change in the future.
+Building
+--------
+You need a JDK (17 or newer; 21 recommended) and an Android SDK with platform
+36 installed. Then:
+
+    ./gradlew assembleDebug      # debug APK
+    ./gradlew assembleRelease    # unsigned release APK
+    ./gradlew test               # unit tests
+
+For release signing in CI, configure these repository secrets:
+`KEYSTORE_BASE64` (base64-encoded keystore file), `KEYSTORE_PASSWORD`,
+`KEY_ALIAS`, and `KEY_PASSWORD`. Without them, tag builds publish the unsigned
+release APK.
 
 XDA: Discussions and preview builds
 -----------------------------------
