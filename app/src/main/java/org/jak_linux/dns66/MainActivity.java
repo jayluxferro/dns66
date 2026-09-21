@@ -7,12 +7,14 @@
  */
 package org.jak_linux.dns66;
 
+import android.Manifest;
 import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -29,6 +31,8 @@ import androidx.viewpager.widget.ViewPager;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.appcompat.widget.Toolbar;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 import android.text.Html;
 import android.util.Log;
@@ -92,6 +96,13 @@ public class MainActivity extends AppCompatActivity {
 
         setContentView(R.layout.activity_main);
 
+        // Android 13 requires a runtime request for the notification permission. Denial is
+        // not fatal: the VPN still runs, only its status notification is hidden.
+        if (Build.VERSION.SDK_INT >= 33
+                && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.POST_NOTIFICATIONS}, 0);
+        }
+
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
 
@@ -148,45 +159,41 @@ public class MainActivity extends AppCompatActivity {
         // Handle action bar item clicks here. The action bar will
         // automatically handle clicks on the Home/Up button, so long
         // as you specify a parent activity in AndroidManifest.xml.
-        switch (item.getItemId()) {
-            case R.id.action_refresh:
-                refresh();
-                break;
-            case R.id.action_load_defaults:
-                config = FileHelper.loadDefaultSettings(this);
-                FileHelper.writeSettings(this, MainActivity.config);
-                recreate();
-                break;
-            case R.id.action_import:
-                Intent intent = new Intent()
-                        .setType("*/*")
-                        .setAction(Intent.ACTION_OPEN_DOCUMENT)
-                        .addCategory(Intent.CATEGORY_OPENABLE);
+        // Resource IDs are not final with the current Android Gradle plugin,
+        // so they cannot be used in switch labels; compare them instead.
+        int itemId = item.getItemId();
+        if (itemId == R.id.action_refresh) {
+            refresh();
+        } else if (itemId == R.id.action_load_defaults) {
+            config = FileHelper.loadDefaultSettings(this);
+            FileHelper.writeSettings(this, MainActivity.config);
+            recreate();
+        } else if (itemId == R.id.action_import) {
+            Intent intent = new Intent()
+                    .setType("*/*")
+                    .setAction(Intent.ACTION_OPEN_DOCUMENT)
+                    .addCategory(Intent.CATEGORY_OPENABLE);
 
-                startActivityForResult(intent, REQUEST_FILE_OPEN);
-                break;
-            case R.id.action_export:
-                Intent exportIntent = new Intent(Intent.ACTION_CREATE_DOCUMENT)
-                        .addCategory(Intent.CATEGORY_OPENABLE)
-                        .setType("*/*")
-                        .putExtra(Intent.EXTRA_TITLE, "dns66.json");
+            startActivityForResult(intent, REQUEST_FILE_OPEN);
+        } else if (itemId == R.id.action_export) {
+            Intent exportIntent = new Intent(Intent.ACTION_CREATE_DOCUMENT)
+                    .addCategory(Intent.CATEGORY_OPENABLE)
+                    .setType("*/*")
+                    .putExtra(Intent.EXTRA_TITLE, "dns66.json");
 
-                startActivityForResult(exportIntent, REQUEST_FILE_STORE);
-                break;
-            case R.id.setting_night_mode:
+            startActivityForResult(exportIntent, REQUEST_FILE_STORE);
+        } else if (itemId == R.id.setting_night_mode) {
+            item.setChecked(!item.isChecked());
+            MainActivity.config.nightMode = item.isChecked();
+            FileHelper.writeSettings(MainActivity.this, MainActivity.config);
+            recreate();
+        } else if (itemId == R.id.setting_show_notification) {
+            // If we are enabling notifications, we do not need to show a dialog.
+            if (!item.isChecked()) {
                 item.setChecked(!item.isChecked());
-                MainActivity.config.nightMode = item.isChecked();
+                MainActivity.config.showNotification = item.isChecked();
                 FileHelper.writeSettings(MainActivity.this, MainActivity.config);
-                recreate();
-                break;
-            case R.id.setting_show_notification:
-                // If we are enabling notifications, we do not need to show a dialog.
-                if (!item.isChecked()) {
-                    item.setChecked(!item.isChecked());
-                    MainActivity.config.showNotification = item.isChecked();
-                    FileHelper.writeSettings(MainActivity.this, MainActivity.config);
-                    break;
-                }
+            } else {
                 new AlertDialog.Builder(this)
                         .setIcon(R.drawable.ic_warning)
                         .setTitle(R.string.disable_notification_title)
@@ -205,14 +212,12 @@ public class MainActivity extends AppCompatActivity {
 
                             }
                         }).show();
-                break;
-            case R.id.action_about:
-                Intent infoIntent = new Intent(this, InfoActivity.class);
-                startActivity(infoIntent);
-                break;
-            case R.id.action_logcat:
-                sendLogcat();
-                break;
+            }
+        } else if (itemId == R.id.action_about) {
+            Intent infoIntent = new Intent(this, InfoActivity.class);
+            startActivity(infoIntent);
+        } else if (itemId == R.id.action_logcat) {
+            sendLogcat();
         }
 
         return super.onOptionsItemSelected(item);

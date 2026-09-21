@@ -2,6 +2,8 @@ package org.jak_linux.dns66;
 
 import android.content.Context;
 import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.system.OsConstants;
@@ -27,6 +29,22 @@ import java.io.Writer;
  */
 
 public final class FileHelper {
+
+    /**
+     * Show a toast from any thread. FileHelper methods are also called from
+     * threads without a Looper (e.g. the VPN thread loading the config at
+     * boot), where calling Toast directly throws
+     * "Can't toast on a thread that has not called Looper.prepare()" and
+     * kills the process.
+     */
+    private static void showToast(final Context context, final String message, final int duration) {
+        new Handler(Looper.getMainLooper()).post(new Runnable() {
+            @Override
+            public void run() {
+                Toast.makeText(context, message, duration).show();
+            }
+        });
+    }
 
     /**
      * Try open the file with {@link Context#openFileInput(String)}, falling back to a file of
@@ -71,7 +89,7 @@ public final class FileHelper {
         try {
             return readConfigFile(context, "settings.json", false);
         } catch (Exception e) {
-            Toast.makeText(context, context.getString(R.string.cannot_read_config, e.getLocalizedMessage()), Toast.LENGTH_LONG).show();
+            showToast(context, context.getString(R.string.cannot_read_config, e.getLocalizedMessage()), Toast.LENGTH_LONG);
             return loadPreviousSettings(context);
         }
     }
@@ -80,7 +98,7 @@ public final class FileHelper {
         try {
             return readConfigFile(context, "settings.json.bak", false);
         } catch (Exception e) {
-            Toast.makeText(context, context.getString(R.string.cannot_restore_previous_config, e.getLocalizedMessage()), Toast.LENGTH_LONG).show();
+            showToast(context, context.getString(R.string.cannot_restore_previous_config, e.getLocalizedMessage()), Toast.LENGTH_LONG);
             return loadDefaultSettings(context);
         }
     }
@@ -89,7 +107,7 @@ public final class FileHelper {
         try {
             return readConfigFile(context, "settings.json", true);
         } catch (Exception e) {
-            Toast.makeText(context, context.getString(R.string.cannot_load_default_config, e.getLocalizedMessage()), Toast.LENGTH_LONG).show();
+            showToast(context, context.getString(R.string.cannot_load_default_config, e.getLocalizedMessage()), Toast.LENGTH_LONG);
             return null;
         }
     }
@@ -101,7 +119,7 @@ public final class FileHelper {
             config.write(writer);
             writer.close();
         } catch (IOException e) {
-            Toast.makeText(context, context.getString(R.string.cannot_write_config, e.getLocalizedMessage()), Toast.LENGTH_SHORT).show();
+            showToast(context, context.getString(R.string.cannot_write_config, e.getLocalizedMessage()), Toast.LENGTH_SHORT);
         }
     }
 
