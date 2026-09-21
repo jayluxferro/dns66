@@ -53,8 +53,7 @@ Currently, there are some minor usability issues:
 
 * If you change a setting, you must manually restart the VPN service
 * There is no validation of input, so DNS servers that are not valid
-  IPv4/IPv6 addresses or host file locations that are not valid URLs are
-  not rejected
+  plain addresses, tls:// hosts, or https:// URLs are not rejected
 
 How it works
 ------------
@@ -62,10 +61,18 @@ The app establishes a VPN service, with routes for all DNS servers diverted to
 it. The VPN service then intercepts the packages for the servers and forwards
 any DNS queries that are not blacklisted.
 
-Custom upstream DNS can be configured, over IPv4 and IPv6. If the feature
-is turned off, the current connection's DNS servers are used. The app ships
-a pre-defined list of well known (mostly German) non-logging servers courtesy
-of the Chaos Computer Club.
+Custom upstream DNS can be configured, over IPv4 and IPv6. Encrypted
+upstreams are supported as well: a DNS server location of the form
+`tls://9.9.9.9` uses DNS over TLS (port 853 by default), and
+`https://1.1.1.1/dns-query` uses DNS over HTTPS (RFC 8484); plain
+`1.2.3.4[:port]` entries use ordinary UDP DNS. Encrypted connections are
+pooled and reused across queries, and their traffic is kept out of the VPN.
+
+The default configuration ships Cloudflare, Google, and Quad9 - including
+their DNS over HTTPS variants and the security-filtered (malware / adult
+content) options - with Cloudflare DoH enabled out of the box. If custom DNS
+servers are turned off entirely, the current connection's DNS servers are
+used over plain UDP.
 
 
 Privacy Guarantee

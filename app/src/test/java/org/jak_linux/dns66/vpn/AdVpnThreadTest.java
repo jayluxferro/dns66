@@ -158,15 +158,35 @@ public class AdVpnThreadTest {
         String format = "192.168.0.%d";
         byte[] ipv6Template = new byte[]{32, 1, 13, (byte) (184 & 0xFF), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-        InetAddress i6addr = Inet6Address.getByName("::1");
-        InetAddress i4addr = Inet4Address.getByName("127.0.0.1");
+        DnsUpstream i4upstream = DnsUpstream.plain("127.0.0.1", 53, Inet4Address.getByName("127.0.0.1"));
+        DnsUpstream i6upstream = DnsUpstream.plain("::1", 53, Inet6Address.getByName("::1"));
 
-        thread.newDNSServer(builder, format, ipv6Template, i4addr);
-        assertTrue(thread.upstreamDnsServers.contains(i4addr));
+        thread.newDNSServer(builder, format, ipv6Template, i4upstream);
+        assertTrue(thread.upstreamDnsServers.contains(i4upstream));
         assertTrue(serversAdded.contains(InetAddress.getByName("192.168.0.2")));
 
-        thread.newDNSServer(builder, format, ipv6Template, i6addr);
-        assertTrue(thread.upstreamDnsServers.contains(i6addr));
+        thread.newDNSServer(builder, format, ipv6Template, i6upstream);
+        assertTrue(thread.upstreamDnsServers.contains(i6upstream));
+        assertEquals(3, ipv6Template[ipv6Template.length - 1]);
+        assertTrue(serversAdded.contains(InetAddress.getByAddress(ipv6Template)));
+    }
+
+    @Test
+    // Encrypted upstreams (DoT/DoH) carry no resolved address: the alias
+    // family comes from the host literal - names (and v4 literals) become
+    // IPv4 aliases, v6 literals IPv6 aliases - without resolving the name.
+    public void testNewDNSServer_encryptedAddressFamily() throws Exception {
+        String format = "192.168.0.%d";
+        byte[] ipv6Template = new byte[]{32, 1, 13, (byte) (184 & 0xFF), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+        DnsUpstream dotByName = DnsUpstream.parse("tls://dot.example.com");
+        thread.newDNSServer(builder, format, ipv6Template, dotByName);
+        assertTrue(thread.upstreamDnsServers.contains(dotByName));
+        assertTrue(serversAdded.contains(InetAddress.getByName("192.168.0.2")));
+
+        DnsUpstream dotV6Literal = DnsUpstream.parse("tls://2001:db8::1");
+        thread.newDNSServer(builder, format, ipv6Template, dotV6Literal);
+        assertTrue(thread.upstreamDnsServers.contains(dotV6Literal));
         assertEquals(3, ipv6Template[ipv6Template.length - 1]);
         assertTrue(serversAdded.contains(InetAddress.getByAddress(ipv6Template)));
     }
@@ -175,16 +195,16 @@ public class AdVpnThreadTest {
     // IPv6 is disabled: We only get IPv4 servers through
     public void testNewDNSServer_ipv6disabled() throws Exception {
         byte[] ipv6Template = new byte[]{32, 1, 13, (byte) (184 & 0xFF), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-        InetAddress i6addr = Inet6Address.getByName("::1");
+        DnsUpstream i6upstream = DnsUpstream.plain("::1", 53, Inet6Address.getByName("::1"));
 
-        thread.newDNSServer(builder, "192.168.0.%d", null, i6addr);
+        thread.newDNSServer(builder, "192.168.0.%d", null, i6upstream);
         assertTrue(serversAdded.isEmpty());
         assertTrue(thread.upstreamDnsServers.isEmpty());
 
-        InetAddress i4addr = Inet4Address.getByName("127.0.0.1");
-        thread.newDNSServer(builder, "192.168.0.%d", null, i4addr);
+        DnsUpstream i4upstream = DnsUpstream.plain("127.0.0.1", 53, Inet4Address.getByName("127.0.0.1"));
+        thread.newDNSServer(builder, "192.168.0.%d", null, i4upstream);
         assertTrue(serversAdded.contains(InetAddress.getByName("192.168.0.2")));
-        assertTrue(thread.upstreamDnsServers.contains(i4addr));
+        assertTrue(thread.upstreamDnsServers.contains(i4upstream));
     }
 
     @Test
@@ -193,15 +213,15 @@ public class AdVpnThreadTest {
         String format = "192.168.0.%d";
         byte[] ipv6Template = new byte[]{32, 1, 13, (byte) (184 & 0xFF), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-        InetAddress i6addr = Inet6Address.getByName("::1");
-        InetAddress i4addr = Inet4Address.getByName("127.0.0.1");
+        DnsUpstream i4upstream = DnsUpstream.plain("127.0.0.1", 53, Inet4Address.getByName("127.0.0.1"));
+        DnsUpstream i6upstream = DnsUpstream.plain("::1", 53, Inet6Address.getByName("::1"));
 
-        thread.newDNSServer(builder, null, ipv6Template, i4addr);
+        thread.newDNSServer(builder, null, ipv6Template, i4upstream);
         assertTrue(thread.upstreamDnsServers.isEmpty());
         assertTrue(serversAdded.isEmpty());
 
-        thread.newDNSServer(builder, format, ipv6Template, i6addr);
-        assertTrue(thread.upstreamDnsServers.contains(i6addr));
+        thread.newDNSServer(builder, format, ipv6Template, i6upstream);
+        assertTrue(thread.upstreamDnsServers.contains(i6upstream));
         assertEquals(2, ipv6Template[ipv6Template.length - 1]);
         assertTrue(serversAdded.contains(InetAddress.getByAddress(ipv6Template)));
     }

@@ -53,6 +53,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 
 class AdVpnThread implements Runnable, DnsPacketProxy.EventLoop {
@@ -65,11 +66,11 @@ class AdVpnThread implements Runnable, DnsPacketProxy.EventLoop {
     private static final int DNS_MAXIMUM_WAITING = 1024;
     private static final long DNS_TIMEOUT_SEC = 10;
     /* Upstream DNS servers, indexed by our IP */
-    final ArrayList<InetAddress> upstreamDnsServers = new ArrayList<>();
+    final ArrayList<DnsUpstream> upstreamDnsServers = new ArrayList<>();
     private final VpnService vpnService;
     private final Notify notify;
     /* Data to be written to the device */
-    private final Queue<byte[]> deviceWrites = new LinkedList<>();
+    private final Queue<byte[]> deviceWrites = new ConcurrentLinkedQueue<>();
     // HashMap that keeps an upper limit of packets
     private final WospList dnsIn = new WospList();
     // The object where we actually handle packets.
@@ -198,6 +199,7 @@ class AdVpnThread implements Runnable, DnsPacketProxy.EventLoop {
                 retryTimeout *= 2;
         }
 
+        dnsPacketProxy.shutdown();
         if (notify != null)
             notify.run(AdVpnService.VPN_STATUS_STOPPED);
         Log.i(TAG, "Exiting");
@@ -363,27 +365,53 @@ class AdVpnThread implements Runnable, DnsPacketProxy.EventLoop {
         deviceWrites.add(ipOutPacket.getRawData());
     }
 
-    void newDNSServer(VpnService.Builder builder, String format, byte[] ipv6Template, InetAddress addr) throws UnknownHostException {
+    void newDNSServer(VpnService.Builder builder, String format, byte[] ipv6Template, DnsUpstream upstream) throws UnknownHostException {
+        // Plain servers have a resolved address; encrypted ones (DoT/DoH) use
+        // their host literal to decide which alias family to use, defaulting
+        // to IPv4 for host names.
+        InetAddress addr = upstream.address != null ? upstream.address : aliasFamilyAddress(upstream.host);
+
         // Optimally we'd allow either one, but the forwarder checks if upstream size is empty, so
         // we really need to acquire both an ipv6 and an ipv4 subnet.
         if (addr instanceof Inet6Address && ipv6Template == null) {
-            Log.i(TAG, "newDNSServer: Ignoring DNS server " + addr);
+            Log.i(TAG, "newDNSServer: Ignoring DNS server " + upstream);
         } else if (addr instanceof Inet4Address && format == null) {
-            Log.i(TAG, "newDNSServer: Ignoring DNS server " + addr);
+            Log.i(TAG, "newDNSServer: Ignoring DNS server " + upstream);
         } else if (addr instanceof Inet4Address) {
-            upstreamDnsServers.add(addr);
+            upstreamDnsServers.add(upstream);
             String alias = String.format(format, upstreamDnsServers.size() + 1);
-            Log.i(TAG, "configure: Adding DNS Server " + addr + " as " + alias);
+            Log.i(TAG, "configure: Adding DNS Server " + upstream + " as " + alias);
             builder.addDnsServer(alias);
             builder.addRoute(alias, 32);
             vpnWatchDog.setTarget(InetAddress.getByName(alias));
         } else if (addr instanceof Inet6Address) {
-            upstreamDnsServers.add(addr);
+            upstreamDnsServers.add(upstream);
             ipv6Template[ipv6Template.length - 1] = (byte) (upstreamDnsServers.size() + 1);
             InetAddress i6addr = Inet6Address.getByAddress(ipv6Template);
-            Log.i(TAG, "configure: Adding DNS Server " + addr + " as " + i6addr);
+            Log.i(TAG, "configure: Adding DNS Server " + upstream + " as " + i6addr);
             builder.addDnsServer(i6addr);
             vpnWatchDog.setTarget(i6addr);
+        }
+    }
+
+    /**
+     * Determines the alias family for an encrypted upstream from its host
+     * string: IPv6 literals map to IPv6 aliases, everything else (IPv4
+     * literals and names) to IPv4. This must not resolve names - that
+     * happens later, on the TLS connection.
+     */
+    private static InetAddress aliasFamilyAddress(String host) {
+        if (host.indexOf(':') >= 0) {
+            try {
+                return Inet6Address.getByName(host);
+            } catch (UnknownHostException e) {
+                // Not a valid literal; fall through to the IPv4 default
+            }
+        }
+        try {
+            return InetAddress.getByName("127.0.0.1");
+        } catch (UnknownHostException e) {
+            throw new IllegalStateException("127.0.0.1 is not a literal", e);
         }
     }
 
@@ -471,7 +499,7 @@ class AdVpnThread implements Runnable, DnsPacketProxy.EventLoop {
             for (Configuration.Item item : config.dnsServers.items) {
                 if (item.state == item.STATE_ALLOW) {
                     try {
-                        newDNSServer(builder, format, ipv6Template, InetAddress.getByName(item.location));
+                        newDNSServer(builder, format, ipv6Template, DnsUpstream.parse(item.location));
                     } catch (Exception e) {
                         Log.e(TAG, "configure: Cannot add custom DNS server", e);
                     }
@@ -481,7 +509,7 @@ class AdVpnThread implements Runnable, DnsPacketProxy.EventLoop {
         // Add all knows DNS servers
         for (InetAddress addr : dnsServers) {
             try {
-                newDNSServer(builder, format, ipv6Template, addr);
+                newDNSServer(builder, format, ipv6Template, DnsUpstream.plain(addr.getHostAddress(), 53, addr));
             } catch (Exception e) {
                 Log.e(TAG, "configure: Cannot add server:", e);
             }
