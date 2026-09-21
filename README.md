@@ -31,18 +31,18 @@ For release signing in CI, configure these repository secrets:
 `KEY_ALIAS`, and `KEY_PASSWORD`. Without them, tag builds publish the unsigned
 release APK.
 
-XDA: Discussions and preview builds
------------------------------------
-There is a thread at XDA, where DNS66 can be discussed and I occasionaly post
-preview builts of the git repository:
-
-https://forum.xda-developers.com/android/apps-games/app-dns66-source-host-ad-blocker-root-t3487497
-
 Using it
 ---------
-On the first start, you must manually update the hosts files (using the
-refresh button) before the service can work correctly (issue #1); and you
-must also update the hosts files yourself regularly for now (issue #2).
+On a fresh install, no hosts files are downloaded yet: use the refresh action
+in the toolbar menu (or pull to refresh on a list) to fetch them before the
+blocking becomes effective. On the Hosts tab you can enable *automatically
+refresh hosts files* to have the rule databases updated in the background via
+a scheduled job.
+
+The first time you start the VPN, Android shows a connection request dialog
+for the VPN permission. Starting on boot can be enabled on the Start tab
+(*Resume on system start-up*), and the VPN notification supports pausing and
+resuming.
 
 Items in the hosts and DNS servers lists can be moved around and removed)
 of the list using standard RecyclerView interactions (long press makes the
@@ -51,13 +51,10 @@ overrides a previous entry; for DNS servers, the first server is preferred.
 
 Currently, there are some minor usability issues:
 
-* If you change a setting, you must manually restart the vpn service (issue #3)
-* IPv6 servers are not supported (issue #4)
-
-There's also no validation of input, so DNS servers that are not valid IPv4
-addresses are not rejected, neither are URLs for DNS server entries (we intend
-to support URLs in the future, so you can point the app to a remote list of
-servers).
+* If you change a setting, you must manually restart the VPN service
+* There is no validation of input, so DNS servers that are not valid
+  IPv4/IPv6 addresses or host file locations that are not valid URLs are
+  not rejected
 
 How it works
 ------------
@@ -65,37 +62,31 @@ The app establishes a VPN service, with routes for all DNS servers diverted to
 it. The VPN service then intercepts the packages for the servers and forwards
 any DNS queries that are not blacklisted.
 
-Custom upstream DNS can be configured. If the feature is turned off, the
-current connection's DNS servers are used. The app ships are pre-defined
-list of well known (mostly German) non-logging servers courtesy of the
-Chaos Computer Club.
+Custom upstream DNS can be configured, over IPv4 and IPv6. If the feature
+is turned off, the current connection's DNS servers are used. The app ships
+a pre-defined list of well known (mostly German) non-logging servers courtesy
+of the Chaos Computer Club.
 
 
 Privacy Guarantee
 -----------------
-Privacy is the most important aspect of DNS66. Currently, DNS66 is strictly
+Privacy is the most important aspect of DNS66. DNS66 is strictly
 data reducing: Running it can only reduce the amount of data leaving your
 device, not increase it (except for fetching hosts files, obviously), as for
 each request, we will either allow it to leave your device or not - we will
 not send other requests or add other information to the request.
 
-While not yet implemented, future versions of DNS66 might have additional
-features that might share more data than your phone normally would. Among
-these features are:
+Two features can send additional data, and both are opt-in:
 
-1. Automatic updates. Your phone might periodically contact servers to query
-   for new upstream versions and new host lists. DNS66 will only include as
-   much data as necessary to complete the request.
+1. Automatic hosts file updates. When *automatically refresh hosts files*
+   is enabled (off by default), your phone periodically contacts the servers
+   the configured host lists live on. DNS66 includes only as much data as
+   necessary to complete the request.
 
-2. Debugging. We hope to have a better way to debug program failures than
-   manually running logcat. Such a feature by definition requires sharing
-   debug logs. Debug logs (including logcat) may include personal information,
-   and you should review them before sharing them publicly.
-
-If such a feature is added, you will be presented with the choice to enable
-it (it will be disabled by default). No such feature will be turned on without
-your explicit consent (for example, clicking yes in a dialog asking whether you
-want to have automatic updates).
+2. Logcat sharing. The *Send logcat* action in the toolbar menu shares the
+   debug log through Android's standard share sheet. Debug logs may include
+   personal information, and you should review them before sharing them
+   publicly.
 
 Contributing
 ------------
@@ -128,3 +119,5 @@ Authors
 Julian Andres Klode <jak@jak-linux.org>
 
 Parts are derived from https://github.com/dbrodie/AdBuster by Daniel Brodie.
+
+This fork is maintained by [jayluxferro](https://github.com/jayluxferro).
