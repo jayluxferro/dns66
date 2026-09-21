@@ -5,13 +5,12 @@ import android.net.VpnService;
 import android.util.Log;
 
 import org.jak_linux.dns66.Configuration;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.mockito.MockedStatic;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
-import org.powermock.core.classloader.annotations.PrepareForTest;
-import org.powermock.modules.junit4.PowerMockRunner;
 
 import java.net.Inet4Address;
 import java.net.Inet6Address;
@@ -22,16 +21,17 @@ import java.util.List;
 import java.util.Set;
 
 import static junit.framework.Assert.*;
-import static org.mockito.Matchers.*;
-import static org.powermock.api.mockito.PowerMockito.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.when;
 
 /**
  * Created by jak on 19/04/17.
  */
-@RunWith(PowerMockRunner.class)
-@PrepareForTest(Log.class)
 public class AdVpnThreadTest {
 
+    private MockedStatic<Log> logMock;
     private AdVpnService service;
     private AdVpnThread thread;
     private Configuration config;
@@ -40,7 +40,7 @@ public class AdVpnThreadTest {
 
     @Before
     public void setUp() {
-        mockStatic(Log.class);
+        logMock = mockStatic(Log.class);
         service = mock(AdVpnService.class);
         thread = new AdVpnThread(service, null);
         builder = mock(VpnService.Builder.class);
@@ -60,17 +60,22 @@ public class AdVpnThreadTest {
         when(builder.addDnsServer(anyString())).thenAnswer(new Answer<VpnService.Builder>() {
             @Override
             public VpnService.Builder answer(InvocationOnMock invocation) throws Throwable {
-                serversAdded.add(InetAddress.getByName(invocation.getArgumentAt(0, String.class)));
+                serversAdded.add(InetAddress.getByName(invocation.getArgument(0)));
                 return builder;
             }
         });
         when(builder.addDnsServer(any(InetAddress.class))).thenAnswer(new Answer<VpnService.Builder>() {
             @Override
             public VpnService.Builder answer(InvocationOnMock invocation) throws Throwable {
-                serversAdded.add(invocation.getArgumentAt(0, InetAddress.class));
+                serversAdded.add(invocation.getArgument(0));
                 return builder;
             }
         });
+    }
+
+    @After
+    public void tearDown() {
+        logMock.close();
     }
 
     @Test
@@ -80,14 +85,14 @@ public class AdVpnThreadTest {
         when(builder.addDisallowedApplication(anyString())).thenAnswer(new Answer<Object>() {
             @Override
             public Object answer(InvocationOnMock invocation) throws Throwable {
-                disallowed.add(invocation.getArgumentAt(0, String.class));
+                disallowed.add(invocation.getArgument(0));
                 return null;
             }
         });
         when(builder.addAllowedApplication(anyString())).thenAnswer(new Answer<Object>() {
             @Override
             public Object answer(InvocationOnMock invocation) throws Throwable {
-                allowed.add(invocation.getArgumentAt(0, String.class));
+                allowed.add(invocation.getArgument(0));
                 return null;
             }
         });

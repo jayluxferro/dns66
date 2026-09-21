@@ -5,10 +5,11 @@ import android.util.Log;
 
 import org.jak_linux.dns66.Configuration;
 import org.jak_linux.dns66.db.RuleDatabase;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import org.pcap4j.packet.IpPacket;
 import org.pcap4j.packet.IpV4Packet;
@@ -23,9 +24,6 @@ import org.pcap4j.packet.namednumber.IpNumber;
 import org.pcap4j.packet.namednumber.IpVersion;
 import org.pcap4j.packet.namednumber.TcpPort;
 import org.pcap4j.packet.namednumber.UdpPort;
-import org.powermock.api.mockito.PowerMockito;
-import org.powermock.core.classloader.annotations.PrepareForTest;
-import org.powermock.modules.junit4.PowerMockRunner;
 import org.xbill.DNS.ARecord;
 import org.xbill.DNS.Message;
 import org.xbill.DNS.Name;
@@ -40,7 +38,7 @@ import java.net.InetAddress;
 import java.util.ArrayList;
 
 import static org.junit.Assert.*;
-import static org.mockito.Matchers.anyString;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.xbill.DNS.Rcode.NOERROR;
 import static org.xbill.DNS.Rcode.NXDOMAIN;
 
@@ -48,9 +46,8 @@ import static org.xbill.DNS.Rcode.NXDOMAIN;
  * Various tests for the core DNS packet proxying code.
  */
 // TODO: 19/03/17 Check for correct point of error
-@RunWith(PowerMockRunner.class)
-@PrepareForTest(Log.class)
 public class DnsPacketProxyTest {
+    private MockedStatic<Log> logMock;
     private MockEventLoop mockEventLoop;
     private DnsPacketProxy dnsPacketProxy;
     private RuleDatabase ruleDatabase;
@@ -67,7 +64,12 @@ public class DnsPacketProxyTest {
 
         Mockito.when(ruleDatabase.isBlocked("blocked.example.com")).thenReturn(true);
 
-        PowerMockito.mockStatic(Log.class);
+        logMock = Mockito.mockStatic(Log.class);
+    }
+
+    @After
+    public void tearDown() {
+        logMock.close();
     }
 
     public void tinySetUp() {

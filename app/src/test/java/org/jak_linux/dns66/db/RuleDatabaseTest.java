@@ -5,13 +5,11 @@ import android.util.Log;
 
 import org.jak_linux.dns66.Configuration;
 import org.jak_linux.dns66.FileHelper;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.mockito.MockedStatic;
 import org.mockito.Mockito;
-import org.powermock.api.mockito.PowerMockito;
-import org.powermock.core.classloader.annotations.PrepareForTest;
-import org.powermock.modules.junit4.PowerMockRunner;
 
 import java.io.ByteArrayInputStream;
 import java.io.FileNotFoundException;
@@ -23,19 +21,27 @@ import java.nio.CharBuffer;
 import java.util.ArrayList;
 
 import static org.junit.Assert.*;
-import static org.mockito.Matchers.*;
-import static org.powermock.api.mockito.PowerMockito.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.spy;
 
-@RunWith(PowerMockRunner.class)
-@PrepareForTest(Log.class)
 public class RuleDatabaseTest {
+
+    private MockedStatic<Log> logMock;
 
     @Before
     public void setUp() {
-        PowerMockito.mockStatic(Log.class);
+        logMock = mockStatic(Log.class);
         // use Mockito to set up your expectation
         //Mockito.when(Log.d(param, msg)).thenReturn(0);
         //Mockito.when(Log.d(tag, msg, throwable)).thenReturn(0);
+    }
+
+    @After
+    public void tearDown() {
+        logMock.close();
     }
 
     @Test
@@ -154,7 +160,6 @@ public class RuleDatabaseTest {
     }
 
     @Test
-    @PrepareForTest({Log.class, FileHelper.class})
     public void testInitialize_host() throws Exception {
         RuleDatabase ruleDatabase = spy(new RuleDatabase());
 
@@ -170,22 +175,27 @@ public class RuleDatabaseTest {
         configuration.hosts.items.add(item);
 
         Context context = mock(Context.class);
-        mockStatic(FileHelper.class);
-        when(FileHelper.loadCurrentSettings(context)).thenReturn(configuration);
-        when(FileHelper.openItemFile(context, item)).thenReturn(null);
-        ruleDatabase.initialize(context);
+        try (MockedStatic<FileHelper> fileHelperMock = mockStatic(FileHelper.class)) {
+            fileHelperMock.when(() -> FileHelper.loadCurrentSettings(context)).thenReturn(configuration);
+            fileHelperMock.when(() -> FileHelper.openItemFile(context, item)).thenReturn(null);
+            ruleDatabase.initialize(context);
+        }
 
         assertTrue(ruleDatabase.isBlocked("ahost.com"));
 
         configuration.hosts.enabled = false;
 
-        ruleDatabase.initialize(context);
+        try (MockedStatic<FileHelper> fileHelperMock = mockStatic(FileHelper.class)) {
+            fileHelperMock.when(() -> FileHelper.loadCurrentSettings(context)).thenReturn(configuration);
+            fileHelperMock.when(() -> FileHelper.openItemFile(context, item)).thenReturn(null);
+            ruleDatabase.initialize(context);
+        }
 
         assertFalse(ruleDatabase.isBlocked("ahost.com"));
         assertTrue(ruleDatabase.isEmpty());
     }
 
-    @PrepareForTest({Log.class, FileHelper.class})
+    @Test
     public void testInitialize_disabled() throws Exception {
         RuleDatabase ruleDatabase = spy(new RuleDatabase());
 
@@ -201,17 +211,17 @@ public class RuleDatabaseTest {
         configuration.hosts.items.add(item);
 
         Context context = mock(Context.class);
-        mockStatic(FileHelper.class);
-        when(FileHelper.loadCurrentSettings(context)).thenReturn(configuration);
-        when(FileHelper.openItemFile(context, item)).thenReturn(null);
-        ruleDatabase.initialize(context);
+        try (MockedStatic<FileHelper> fileHelperMock = mockStatic(FileHelper.class)) {
+            fileHelperMock.when(() -> FileHelper.loadCurrentSettings(context)).thenReturn(configuration);
+            fileHelperMock.when(() -> FileHelper.openItemFile(context, item)).thenReturn(null);
+            ruleDatabase.initialize(context);
+        }
 
         assertFalse(ruleDatabase.isBlocked("ahost.com"));
         assertTrue(ruleDatabase.isEmpty());
     }
 
     @Test
-    @PrepareForTest({Log.class, FileHelper.class})
     public void testInitialize_file() throws Exception {
         RuleDatabase ruleDatabase = spy(new RuleDatabase());
 
@@ -227,23 +237,27 @@ public class RuleDatabaseTest {
         configuration.hosts.items.add(item);
 
         Context context = mock(Context.class);
-        mockStatic(FileHelper.class);
-        when(FileHelper.loadCurrentSettings(context)).thenReturn(configuration);
-        when(FileHelper.openItemFile(context, item)).thenReturn(new InputStreamReader(new ByteArrayInputStream("example.com".getBytes("utf-8"))));
-        ruleDatabase.initialize(context);
+        try (MockedStatic<FileHelper> fileHelperMock = mockStatic(FileHelper.class)) {
+            fileHelperMock.when(() -> FileHelper.loadCurrentSettings(context)).thenReturn(configuration);
+            fileHelperMock.when(() -> FileHelper.openItemFile(context, item)).thenReturn(new InputStreamReader(new ByteArrayInputStream("example.com".getBytes("utf-8"))));
+            ruleDatabase.initialize(context);
+        }
 
         assertTrue(ruleDatabase.isBlocked("example.com"));
 
         item.state = Configuration.Item.STATE_IGNORE;
 
-        ruleDatabase.initialize(context);
+        try (MockedStatic<FileHelper> fileHelperMock = mockStatic(FileHelper.class)) {
+            fileHelperMock.when(() -> FileHelper.loadCurrentSettings(context)).thenReturn(configuration);
+            fileHelperMock.when(() -> FileHelper.openItemFile(context, item)).thenReturn(new InputStreamReader(new ByteArrayInputStream("example.com".getBytes("utf-8"))));
+            ruleDatabase.initialize(context);
+        }
 
         assertTrue(ruleDatabase.isEmpty());
 
     }
 
     @Test
-    @PrepareForTest({Log.class, FileHelper.class})
     public void testInitialize_fileNotFound() throws Exception {
         RuleDatabase ruleDatabase = spy(new RuleDatabase());
 
@@ -259,10 +273,11 @@ public class RuleDatabaseTest {
         configuration.hosts.items.add(item);
 
         Context context = mock(Context.class);
-        mockStatic(FileHelper.class);
-        when(FileHelper.loadCurrentSettings(context)).thenReturn(configuration);
-        when(FileHelper.openItemFile(context, item)).thenThrow(new FileNotFoundException("foobar"));
-        ruleDatabase.initialize(context);
+        try (MockedStatic<FileHelper> fileHelperMock = mockStatic(FileHelper.class)) {
+            fileHelperMock.when(() -> FileHelper.loadCurrentSettings(context)).thenReturn(configuration);
+            fileHelperMock.when(() -> FileHelper.openItemFile(context, item)).thenThrow(new FileNotFoundException("foobar"));
+            ruleDatabase.initialize(context);
+        }
         assertTrue(ruleDatabase.isEmpty());
     }
 

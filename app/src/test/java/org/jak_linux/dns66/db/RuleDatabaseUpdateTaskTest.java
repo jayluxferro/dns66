@@ -7,14 +7,13 @@ import android.net.Uri;
 import android.util.Log;
 
 import org.jak_linux.dns66.Configuration;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.mockito.MockedStatic;
+import org.mockito.Mockito;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
-import org.powermock.api.mockito.PowerMockito;
-import org.powermock.core.classloader.annotations.PrepareForTest;
-import org.powermock.modules.junit4.PowerMockRunner;
 
 import java.util.HashMap;
 import java.util.Iterator;
@@ -22,17 +21,21 @@ import java.util.LinkedList;
 import java.util.List;
 
 import static org.junit.Assert.*;
-import static org.mockito.Matchers.*;
-import static org.powermock.api.mockito.PowerMockito.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.when;
 
 /**
  * Created by jak on 19/05/17.
  */
-@RunWith(PowerMockRunner.class)
-@PrepareForTest({Log.class, Uri.class})
 public class RuleDatabaseUpdateTaskTest {
 
     HashMap<String, Uri> uriLocations = new HashMap<>();
+
+    private MockedStatic<Log> logMock;
+    private MockedStatic<Uri> uriMock;
 
     private Configuration.Item newItemForLocation(String location) {
         Configuration.Item item = new Configuration.Item();
@@ -42,17 +45,23 @@ public class RuleDatabaseUpdateTaskTest {
 
     @Before
     public void setUp() throws Exception {
-        mockStatic(Log.class);
-        mockStatic(Uri.class);
+        logMock = mockStatic(Log.class);
+        uriMock = mockStatic(Uri.class);
 
-        when(Uri.class, "parse", anyString()).thenAnswer(new Answer<Uri>() {
+        uriMock.when(() -> Uri.parse(anyString())).thenAnswer(new Answer<Uri>() {
 
             @Override
             public Uri answer(InvocationOnMock invocation) throws Throwable {
-                return newUri(invocation.getArgumentAt(0, String.class));
+                return newUri(invocation.getArgument(0));
             }
         });
 
+    }
+
+    @After
+    public void tearDown() throws Exception {
+        logMock.close();
+        uriMock.close();
     }
 
     @Test
@@ -78,12 +87,12 @@ public class RuleDatabaseUpdateTaskTest {
                 Iterator<UriPermission> iter = persistedPermissions.iterator();
                 while (iter.hasNext()) {
                     UriPermission perm = iter.next();
-                    if (perm.getUri() == invocation.getArgumentAt(0, Uri.class))
+                    if (perm.getUri() == invocation.getArgument(0))
                         iter.remove();
                 }
                 return null;
             }
-        }).when(mockResolver, "releasePersistableUriPermission", any(Uri.class), anyInt());
+        }).when(mockResolver).releasePersistableUriPermission(any(Uri.class), anyInt());
 
         Configuration configuration = new Configuration();
         configuration.hosts.items.add(newItemForLocation("content://used"));
@@ -101,7 +110,7 @@ public class RuleDatabaseUpdateTaskTest {
         if (uriLocations.containsKey(location))
             return uriLocations.get(location);
 
-        Uri uri = PowerMockito.mock(Uri.class);
+        Uri uri = Mockito.mock(Uri.class);
         uriLocations.put(location, uri);
 
         return uri;

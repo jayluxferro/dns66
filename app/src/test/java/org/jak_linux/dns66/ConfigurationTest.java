@@ -9,11 +9,12 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 
 import org.hamcrest.CoreMatchers;
-import org.junit.runner.RunWith;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
+import org.mockito.MockedStatic;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
@@ -25,24 +26,21 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import org.powermock.core.classloader.annotations.PrepareForTest;
-import org.powermock.modules.junit4.PowerMockRunner;
-
 import static org.junit.Assert.*;
-import static org.mockito.Matchers.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
-import static org.powermock.api.mockito.PowerMockito.mockStatic;
 
 /**
  * Created by jak on 07/04/17.
  */
-@RunWith(PowerMockRunner.class)
-@PrepareForTest(Log.class)
 public class ConfigurationTest {
 
     @Rule
     public ExpectedException thrown = ExpectedException.none();
+
+    private MockedStatic<Log> logMock;
 
     private Configuration.Item newItemForLocation(String location) {
         Configuration.Item item = new Configuration.Item();
@@ -69,9 +67,14 @@ public class ConfigurationTest {
 
     @Before
     public void setUp() {
-        mockStatic(Log.class);
+        logMock = mockStatic(Log.class);
     }
-    
+
+    @After
+    public void tearDown() {
+        logMock.close();
+    }
+
     @Test
     public void testResolve() throws Exception {
         Configuration.Allowlist wl = new Configuration.Allowlist() {
@@ -163,9 +166,8 @@ public class ConfigurationTest {
     }
 
     @Test
-    @PrepareForTest({Log.class})
     public void testRead() throws Exception {
-        when(Log.d(anyString(), anyString(), any(Throwable.class))).then(new CountingAnswer(null));
+        logMock.when(() -> Log.d(anyString(), anyString(), any(Throwable.class))).thenAnswer(new CountingAnswer(null));
         Configuration config = Configuration.read(new StringReader("{}"));
 
         assertNotNull(config.hosts);
@@ -232,7 +234,10 @@ public class ConfigurationTest {
         @Override
         public Object answer(InvocationOnMock invocation) throws Throwable {
             numCalls++;
-            return result;
+            // The stubbed Log methods return int; Mockito cannot translate a
+            // null answer to a primitive, so fall back to 0 (the value an
+            // unstubbed call would report).
+            return result != null ? result : 0;
         }
     }
 

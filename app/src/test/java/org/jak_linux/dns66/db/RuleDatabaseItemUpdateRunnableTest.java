@@ -8,13 +8,12 @@ import android.util.Log;
 
 import org.jak_linux.dns66.Configuration;
 import org.jak_linux.dns66.SingleWriterMultipleReaderFile;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.mockito.MockedStatic;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
-import org.powermock.core.classloader.annotations.PrepareForTest;
-import org.powermock.modules.junit4.PowerMockRunner;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -28,11 +27,14 @@ import java.net.URL;
 import java.util.ArrayList;
 
 import static org.junit.Assert.*;
-import static org.mockito.Matchers.*;
-import static org.powermock.api.mockito.PowerMockito.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.when;
 
-@RunWith(PowerMockRunner.class)
-@PrepareForTest({Log.class})
 public class RuleDatabaseItemUpdateRunnableTest {
     private Context mockContext;
     private File file;
@@ -44,10 +46,11 @@ public class RuleDatabaseItemUpdateRunnableTest {
     private RuleDatabaseUpdateTask realTask;
     private RuleDatabaseUpdateTask mockTask;
     private ContentResolver mockResolver;
+    private MockedStatic<Log> logMock;
 
     @Before
     public void setUp() {
-        mockStatic(Log.class);
+        logMock = mockStatic(Log.class);
 
         mockContext = mock(Context.class);
         file = mock(File.class);
@@ -62,11 +65,16 @@ public class RuleDatabaseItemUpdateRunnableTest {
         try {
             when(url.openConnection()).thenReturn(connection);
             when(mockContext.getContentResolver()).thenReturn(mockResolver);
-            doAnswer(finishAnswer).when(singleWriterMultipleReaderFile, "finishWrite", any(FileOutputStream.class));
-            doAnswer(failAnswer).when(singleWriterMultipleReaderFile, "failWrite", any(FileOutputStream.class));
+            doAnswer(finishAnswer).when(singleWriterMultipleReaderFile).finishWrite(any(FileOutputStream.class));
+            doAnswer(failAnswer).when(singleWriterMultipleReaderFile).failWrite(any(FileOutputStream.class));
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    @After
+    public void tearDown() {
+        logMock.close();
     }
 
     @Test
@@ -88,18 +96,20 @@ public class RuleDatabaseItemUpdateRunnableTest {
         mockTask.configuration.hosts.items.get(0).state = Configuration.Item.STATE_DENY;
         mockTask.configuration.hosts.items.get(0).location = "http://foo";
 
-        when(mockTask, "addError", any(Configuration.Item.class), anyString()).thenCallRealMethod();
-        when(mockTask, "addDone", any(Configuration.Item.class)).thenCallRealMethod();
+        // any() for the message, not anyString(): mocked Context.getString()
+        // returns null and anyString() does not match null in Mockito 2+.
+        doCallRealMethod().when(mockTask).addError(any(Configuration.Item.class), any());
+        doCallRealMethod().when(mockTask).addDone(any(Configuration.Item.class));
 
         RuleDatabaseItemUpdateRunnable itemUpdateRunnable = mock(RuleDatabaseItemUpdateRunnable.class);
         itemUpdateRunnable.parentTask = mockTask;
         itemUpdateRunnable.context = mockContext;
         itemUpdateRunnable.item = mockTask.configuration.hosts.items.get(0);
 
-        when(itemUpdateRunnable, "run").thenCallRealMethod();
-        when(itemUpdateRunnable, "shouldDownload").thenCallRealMethod();
+        doCallRealMethod().when(itemUpdateRunnable).run();
+        when(itemUpdateRunnable.shouldDownload()).thenCallRealMethod();
         when(mockTask.getCommand(any(Configuration.Item.class))).thenReturn(itemUpdateRunnable);
-        when(itemUpdateRunnable, "downloadFile", any(File.class), any(SingleWriterMultipleReaderFile.class), any(HttpURLConnection.class)).then(downloadCount);
+        doAnswer(downloadCount).when(itemUpdateRunnable).downloadFile(any(File.class), any(SingleWriterMultipleReaderFile.class), any(HttpURLConnection.class));
 
 
         // Scenario 1: Validate response fails
@@ -125,7 +135,7 @@ public class RuleDatabaseItemUpdateRunnableTest {
                 throw new IOException("FooBarException");
             }
         };
-        when(itemUpdateRunnable, "downloadFile", any(File.class), any(SingleWriterMultipleReaderFile.class), any(HttpURLConnection.class)).then(downloadExceptionCount);
+        doAnswer(downloadExceptionCount).when(itemUpdateRunnable).downloadFile(any(File.class), any(SingleWriterMultipleReaderFile.class), any(HttpURLConnection.class));
         assertTrue(itemUpdateRunnable.shouldDownload());
         itemUpdateRunnable.run();
         assertEquals(1, downloadExceptionCount.numCalls);
@@ -145,11 +155,11 @@ public class RuleDatabaseItemUpdateRunnableTest {
         itemUpdateRunnable.context = mockContext;
         itemUpdateRunnable.item = item;
 
-        when(itemUpdateRunnable, "run").thenCallRealMethod();
-        when(itemUpdateRunnable, "shouldDownload").thenCallRealMethod();
+        doCallRealMethod().when(itemUpdateRunnable).run();
+        when(itemUpdateRunnable.shouldDownload()).thenCallRealMethod();
         when(itemUpdateRunnable.parseUri(anyString())).thenReturn(mock(Uri.class));
         CountingAnswer downloadCount = new CountingAnswer(null);
-        when(itemUpdateRunnable, "downloadFile", any(File.class), any(SingleWriterMultipleReaderFile.class), any(HttpURLConnection.class)).then(downloadCount);
+        doAnswer(downloadCount).when(itemUpdateRunnable).downloadFile(any(File.class), any(SingleWriterMultipleReaderFile.class), any(HttpURLConnection.class));
         when(mockResolver.openInputStream(any(Uri.class))).thenReturn(mock(InputStream.class));
 
         assertTrue(itemUpdateRunnable.shouldDownload());
@@ -160,7 +170,7 @@ public class RuleDatabaseItemUpdateRunnableTest {
         assertEquals(0, realTask.done.size());
         assertEquals(0, realTask.pending.size());
 
-        when(mockResolver, "takePersistableUriPermission", any(Uri.class), anyInt()).thenThrow(new SecurityException("FooBar"));
+        doThrow(new SecurityException("FooBar")).when(mockResolver).takePersistableUriPermission(any(Uri.class), anyInt());
 
         itemUpdateRunnable.run();
 
@@ -228,17 +238,17 @@ public class RuleDatabaseItemUpdateRunnableTest {
         final ByteArrayOutputStream bos = new ByteArrayOutputStream();
 
         FileOutputStream fos = mock(FileOutputStream.class);
-        when(fos, "write", any(byte[].class), anyInt(), anyInt()).then(new Answer<Void>() {
+        doAnswer(new Answer<Void>() {
             @Override
             public Void answer(InvocationOnMock invocation) throws Throwable {
-                byte[] buffer = invocation.getArgumentAt(0, byte[].class);
-                int off = invocation.getArgumentAt(1, Integer.class);
-                int len = invocation.getArgumentAt(2, Integer.class);
+                byte[] buffer = invocation.getArgument(0);
+                int off = invocation.getArgument(1);
+                int len = invocation.getArgument(2);
 
                 bos.write(buffer, off, len);
                 return null;
             }
-        });
+        }).when(fos).write(any(byte[].class), anyInt(), anyInt());
 
         when(connection.getInputStream()).thenReturn(bis);
         when(singleWriterMultipleReaderFile.startWrite()).thenReturn(fos);
@@ -261,7 +271,7 @@ public class RuleDatabaseItemUpdateRunnableTest {
         when(connection.getInputStream()).thenReturn(is);
         when(singleWriterMultipleReaderFile.startWrite()).thenReturn(fos);
 
-        doThrow(new IOException("foobar")).when(fos, "write", any(byte[].class), anyInt(), anyInt());
+        doThrow(new IOException("foobar")).when(fos).write(any(byte[].class), anyInt(), anyInt());
         try {
             itemUpdateRunnable.downloadFile(file, singleWriterMultipleReaderFile, connection);
             fail("Should have thrown exception");
@@ -284,11 +294,11 @@ public class RuleDatabaseItemUpdateRunnableTest {
         when(connection.getInputStream()).thenReturn(is);
         when(singleWriterMultipleReaderFile.startWrite()).thenReturn(fos);
         when(is.read(any(byte[].class))).thenReturn(-1);
-        when(Log.d(anyString(), anyString())).then(debugAnswer);
+        logMock.when(() -> Log.d(anyString(), anyString())).thenAnswer(debugAnswer);
 
         // Scenario 0: Connection has no last modified & we cannot set (0, 0)
         when(connection.getLastModified()).thenReturn(0L);
-        when(file.setLastModified(anyLong())).then(setLastModifiedAnswerFalse);
+        when(file.setLastModified(anyLong())).thenAnswer(setLastModifiedAnswerFalse);
 
         itemUpdateRunnable.downloadFile(file, singleWriterMultipleReaderFile, connection);
 
@@ -298,7 +308,7 @@ public class RuleDatabaseItemUpdateRunnableTest {
 
         // Scenario 1: Connect has no last modified & we can set (0, 1);
         when(connection.getLastModified()).thenReturn(0L);
-        when(file.setLastModified(anyLong())).then(setLastModifiedAnswerTrue);
+        when(file.setLastModified(anyLong())).thenAnswer(setLastModifiedAnswerTrue);
 
         itemUpdateRunnable.downloadFile(file, singleWriterMultipleReaderFile, connection);
 
@@ -308,7 +318,7 @@ public class RuleDatabaseItemUpdateRunnableTest {
 
         // Scenario 2: Connect has last modified & we cannot set (1, 0);
         when(connection.getLastModified()).thenReturn(1L);
-        when(file.setLastModified(anyLong())).then(setLastModifiedAnswerFalse);
+        when(file.setLastModified(anyLong())).thenAnswer(setLastModifiedAnswerFalse);
 
         itemUpdateRunnable.downloadFile(file, singleWriterMultipleReaderFile, connection);
 
@@ -318,7 +328,7 @@ public class RuleDatabaseItemUpdateRunnableTest {
 
         // Scenario 4: Connect has last modified & we cannot set (1, 1);
         when(connection.getLastModified()).thenReturn(1L);
-        when(file.setLastModified(anyLong())).then(setLastModifiedAnswerTrue);
+        when(file.setLastModified(anyLong())).thenAnswer(setLastModifiedAnswerTrue);
 
         itemUpdateRunnable.downloadFile(file, singleWriterMultipleReaderFile, connection);
 
@@ -340,7 +350,6 @@ public class RuleDatabaseItemUpdateRunnableTest {
     }
 
     @Test
-    @PrepareForTest({Log.class})
     public void testGetHttpURLConnection() throws Exception {
         RuleDatabaseItemUpdateRunnable itemUpdateRunnable = mock(RuleDatabaseItemUpdateRunnable.class);
 
@@ -354,7 +363,7 @@ public class RuleDatabaseItemUpdateRunnableTest {
         // Setting modified.
         CountingAnswer setIfModifiedAnswer = new CountingAnswer(null);
         when(file.lastModified()).thenReturn(42L);
-        when(connection, "setIfModifiedSince", eq(42L)).then(setIfModifiedAnswer);
+        doAnswer(setIfModifiedAnswer).when(connection).setIfModifiedSince(42L);
 
         assertSame(connection, itemUpdateRunnable.getHttpURLConnection(file, singleWriterMultipleReaderFile, url));
         assertEquals(1, setIfModifiedAnswer.numCalls);
@@ -380,7 +389,10 @@ public class RuleDatabaseItemUpdateRunnableTest {
         @Override
         public Object answer(InvocationOnMock invocation) throws Throwable {
             numCalls++;
-            return result;
+            // Log.d returns int while the other stubbed methods are void or
+            // boolean; Mockito cannot translate a null answer to a primitive,
+            // so fall back to 0 when no result was given.
+            return result != null ? result : 0;
         }
     }
 

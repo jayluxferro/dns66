@@ -2,12 +2,10 @@ package org.jak_linux.dns66.vpn;
 
 import android.util.Log;
 
-import org.jak_linux.dns66.FileHelper;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.powermock.core.classloader.annotations.PrepareForTest;
-import org.powermock.modules.junit4.PowerMockRunner;
+import org.mockito.MockedStatic;
 
 import java.io.IOException;
 import java.net.DatagramPacket;
@@ -15,28 +13,37 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 
 import static org.junit.Assert.*;
-import static org.mockito.Matchers.*;
-import static org.powermock.api.mockito.PowerMockito.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.when;
 
 /**
  * Tests for the Vpn watchdog
  */
-@RunWith(PowerMockRunner.class)
-@PrepareForTest(Log.class)
 public class VpnWatchdogTest {
 
+    private MockedStatic<Log> logMock;
     private VpnWatchdog watchdog;
     private DatagramSocket mockSocket;
 
     @Before
     public void setUp() throws Exception {
-        mockStatic(Log.class);
+        logMock = mockStatic(Log.class);
         watchdog = spy(new VpnWatchdog());
         watchdog.initialize(true);
 
         mockSocket = mock(DatagramSocket.class);
         when(watchdog.newDatagramSocket()).thenReturn(mockSocket);
         watchdog.setTarget(InetAddress.getByAddress(new byte[]{127, 0, 0, 1}));
+    }
+
+    @After
+    public void tearDown() throws Exception {
+        logMock.close();
     }
 
     @Test
@@ -78,7 +85,7 @@ public class VpnWatchdogTest {
 
     @Test
     public void testHandleTimeout() throws Exception {
-        doNothing().when(watchdog, "sendPacket");
+        doNothing().when(watchdog).sendPacket();
         assertEquals(1000, watchdog.getPollTimeout());
         // Successful case increments
         watchdog.handleTimeout();

@@ -2,24 +2,26 @@ package org.jak_linux.dns66;
 
 import org.junit.Before;
 import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.mockito.MockedConstruction;
 import org.mockito.Mockito;
-import org.powermock.core.classloader.annotations.PrepareForTest;
-import org.powermock.modules.junit4.PowerMockRunner;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 
 import static org.junit.Assert.*;
-import static org.mockito.Matchers.*;
-import static org.powermock.api.mockito.PowerMockito.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.when;
 
 
 /**
  * Created by jak on 08/04/17.
  */
-@RunWith(PowerMockRunner.class)
 public class SingleWriterMultipleReaderFileTest {
     private SingleWriterMultipleReaderFile reader;
     private File activeFile;
@@ -45,13 +47,18 @@ public class SingleWriterMultipleReaderFileTest {
     }
 
     @Test
-    @PrepareForTest({FileOutputStream.class, SingleWriterMultipleReaderFile.class})
     public void testStartWrite_success() throws Exception {
         when(reader.startWrite()).thenCallRealMethod();
         when(workFile.exists()).thenReturn(false);
         when(workFile.getPath()).thenReturn("/nonexisting/path/for/dns66");
-        whenNew(FileOutputStream.class).withAnyArguments().thenReturn(fos);
-        assertSame(fos, reader.startWrite());
+
+        // Replaces the legacy whenNew(FileOutputStream.class) interception:
+        // mockConstruction intercepts the constructor, and constructed() gives
+        // access to the mock built for the instance created inside startWrite().
+        try (MockedConstruction<FileOutputStream> constructed = mockConstruction(FileOutputStream.class)) {
+            FileOutputStream created = reader.startWrite();
+            assertSame(constructed.constructed().get(0), created);
+        }
     }
 
     @Test

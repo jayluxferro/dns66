@@ -6,18 +6,16 @@ import android.os.Environment;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.system.OsConstants;
-import android.system.StructPollfd;
 import android.util.Log;
 
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
-import org.powermock.core.classloader.annotations.PrepareForTest;
-import org.powermock.modules.junit4.PowerMockRunner;
 
 import java.io.Closeable;
 import java.io.File;
@@ -29,19 +27,25 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.io.UnsupportedEncodingException;
+import java.lang.reflect.Field;
 
 import static org.junit.Assert.*;
-import static org.mockito.Matchers.*;
-import static org.powermock.api.mockito.PowerMockito.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.when;
 
 /**
  * Created by jak on 07/04/17.
  */
-@RunWith(PowerMockRunner.class)
 public class FileHelperTest {
     Context mockContext;
     AssetManager mockAssets;
     int testResult;
+
+    private MockedStatic<Log> logMock;
+    private MockedStatic<Os> osMock;
 
     @Before
     public void setUp() {
@@ -49,11 +53,19 @@ public class FileHelperTest {
         mockAssets = mock(AssetManager.class);
         testResult = 0;
 
+        logMock = mockStatic(Log.class);
+        osMock = mockStatic(Os.class);
+
         when(mockContext.getAssets()).thenReturn(mockAssets);
     }
 
+    @After
+    public void tearDown() {
+        logMock.close();
+        osMock.close();
+    }
+
     @Test
-    @PrepareForTest({Environment.class})
     public void testGetItemFile() throws Exception {
         File file = new File("/dir/");
         when(mockContext.getExternalFilesDir(null)).thenReturn(file);
@@ -68,15 +80,15 @@ public class FileHelperTest {
         item.location = "file:/myfile";
         assertNull(FileHelper.getItemFile(mockContext, item));
 
-        mockStatic(Environment.class);
-        when(Environment.getExternalStorageDirectory()).thenReturn(new File("/sdcard/"));
+        try (MockedStatic<Environment> environmentMock = mockStatic(Environment.class)) {
+            environmentMock.when(Environment::getExternalStorageDirectory).thenReturn(new File("/sdcard/"));
 
-        item.location = "file:myfile";
-        assertNull(null, FileHelper.getItemFile(mockContext, item));
+            item.location = "file:myfile";
+            assertNull(null, FileHelper.getItemFile(mockContext, item));
 
-
-        item.location = "ahost.com";
-        assertNull(FileHelper.getItemFile(mockContext, item));
+            item.location = "ahost.com";
+            assertNull(FileHelper.getItemFile(mockContext, item));
+        }
     }
 
     @Test
@@ -90,10 +102,12 @@ public class FileHelperTest {
         item.location = "https://example.com/";
         assertEquals(new File("/dir/https%3A%2F%2Fexample.com%2F"), FileHelper.getItemFile(mockContext, item));
 
-        // TODO: The following PowerMockito code prints the exception, but does not fail
-        mockStatic(java.net.URLEncoder.class);
-        when(java.net.URLEncoder.encode(anyString(), anyString())).thenThrow(new UnsupportedEncodingException("foo"));
-        assertNull(FileHelper.getItemFile(mockContext, item));
+        // TODO: The following code prints the exception, but does not fail
+        // (same behavior as before the Mockito migration; the test stays @Ignore'd).
+        try (MockedStatic<java.net.URLEncoder> urlEncoderMock = mockStatic(java.net.URLEncoder.class)) {
+            urlEncoderMock.when(() -> java.net.URLEncoder.encode(anyString(), anyString())).thenThrow(new UnsupportedEncodingException("foo"));
+            assertNull(FileHelper.getItemFile(mockContext, item));
+        }
     }
 
     @Test
@@ -138,27 +152,26 @@ public class FileHelperTest {
     }
 
     @Test
-    @PrepareForTest({Configuration.class})
     public void testLoadDefaultSettings() throws Exception {
         InputStream mockInStream = mock(InputStream.class);
         Configuration mockConfig = mock(Configuration.class);
         when(mockAssets.open(anyString())).thenReturn(mockInStream);
         when(mockContext.getAssets()).thenReturn(mockAssets);
 
-        mockStatic(Configuration.class);
-        doReturn(mockConfig).when(Configuration.class, "read", any(Reader.class));
+        try (MockedStatic<Configuration> configurationMock = mockStatic(Configuration.class)) {
+            configurationMock.when(() -> Configuration.read(any(Reader.class))).thenReturn(mockConfig);
 
-        assertSame(mockConfig, FileHelper.loadDefaultSettings(mockContext));
+            assertSame(mockConfig, FileHelper.loadDefaultSettings(mockContext));
+        }
 
-        Mockito.verify(mockAssets.open(anyString()));
+        Mockito.verify(mockAssets).open(anyString());
     }
 
     @Test
-    @PrepareForTest({Log.class, Os.class})
     public void testPoll_retryInterrupt() throws Exception {
-        mockStatic(Log.class);
-        mockStatic(Os.class);
-        when(Os.poll(any(StructPollfd[].class), anyInt())).then(new Answer<Integer>() {
+        // any() rather than any(StructPollfd[].class): the test passes null fds
+        // and any(Class) does not match null in Mockito 2+.
+        osMock.when(() -> Os.poll(any(), anyInt())).thenAnswer(new Answer<Integer>() {
             @Override
             public Integer answer(InvocationOnMock invocation) throws Throwable {
                 // First try fails with EINTR, seconds returns success.
@@ -189,16 +202,15 @@ public class FileHelperTest {
     }
 
     @Test
-    @PrepareForTest({Log.class, Os.class})
     public void testPoll_fault() throws Exception {
-        mockStatic(Log.class);
-        mockStatic(Os.class);
-
         // Eww, Android is playing dirty and setting all errno values to 0.
         // Hack around it so we can test that aborting the loop works.
         final ErrnoException e = new ErrnoException("foo", 42);
-        e.getClass().getDeclaredField("errno").setInt(e, 42);
-        when(Os.poll(any(StructPollfd[].class), anyInt())).then(new Answer<Integer>() {
+        // errno is final, so setAccessible is needed for the write to stick.
+        Field errno = e.getClass().getDeclaredField("errno");
+        errno.setAccessible(true);
+        errno.setInt(e, 42);
+        osMock.when(() -> Os.poll(any(), anyInt())).thenAnswer(new Answer<Integer>() {
             @Override
             public Integer answer(InvocationOnMock invocation) throws Throwable {
                 testResult++;
@@ -217,23 +229,17 @@ public class FileHelperTest {
     }
 
     @Test
-    @PrepareForTest({Log.class, Os.class})
     public void testPoll_success() throws Exception {
-        mockStatic(Log.class);
-        mockStatic(Os.class);
-        when(Os.poll(any(StructPollfd[].class), anyInt())).then(new CountingAnswer(42));
+        osMock.when(() -> Os.poll(any(), anyInt())).thenAnswer(new CountingAnswer(42));
         assertEquals(42, FileHelper.poll(null, 0));
         assertEquals(1, testResult);
     }
 
 
     @Test
-    @PrepareForTest({Log.class, Os.class})
     public void testCloseOrWarn_fileDescriptor() throws Exception {
         FileDescriptor fd = mock(FileDescriptor.class);
-        mockStatic(Log.class);
-        mockStatic(Os.class);
-        when(Log.e(anyString(), anyString(), any(Throwable.class))).then(new CountingAnswer(null));
+        logMock.when(() -> Log.e(anyString(), anyString(), any(Throwable.class))).thenAnswer(new CountingAnswer(null));
 
         // Closing null should work just fine
         testResult = 0;
@@ -247,17 +253,15 @@ public class FileHelperTest {
 
         // If closing fails, it should log.
         testResult = 0;
-        doThrow(new ErrnoException("close", 0)).when(Os.class, "close", any(FileDescriptor.class));
+        osMock.when(() -> Os.close(any(FileDescriptor.class))).thenThrow(new ErrnoException("close", 0));
         assertNull(FileHelper.closeOrWarn(fd, "tag", "msg"));
         assertEquals(1, testResult);
     }
 
     @Test
-    @PrepareForTest(Log.class)
     public void testCloseOrWarn_closeable() throws Exception {
         Closeable closeable = mock(Closeable.class);
-        mockStatic(Log.class);
-        when(Log.e(anyString(), anyString(), any(Throwable.class))).then(new CountingAnswer(null));
+        logMock.when(() -> Log.e(anyString(), anyString(), any(Throwable.class))).thenAnswer(new CountingAnswer(null));
 
         // Closing null should work just fine
         testResult = 0;
@@ -270,7 +274,7 @@ public class FileHelperTest {
         assertEquals(0, testResult);
 
         // If closing fails, it should log.
-        when(closeable).thenThrow(new IOException("Foobar"));
+        doThrow(new IOException("Foobar")).when(closeable).close();
 
         testResult = 0;
         assertNull(FileHelper.closeOrWarn(closeable, "tag", "msg"));
@@ -288,7 +292,9 @@ public class FileHelperTest {
         @Override
         public Object answer(InvocationOnMock invocation) throws Throwable {
             testResult++;
-            return result;
+            // Os.poll returns an int; Mockito cannot translate a null answer
+            // to a primitive, so fall back to 0 when no result was given.
+            return result != null ? result : 0;
         }
     }
 }
