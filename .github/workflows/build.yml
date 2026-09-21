@@ -62,15 +62,18 @@ jobs:
           name: apk
           path: apk
 
-      - name: Set up Android build tools
-        run: yes | sdkmanager "build-tools;35.0.0" > /dev/null
+      - name: Locate Android build tools
+        run: |
+          BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          echo "Using $BUILD_TOOLS"
+          test -x "$BUILD_TOOLS/zipalign" && test -x "$BUILD_TOOLS/apksigner"
+          echo "BUILD_TOOLS=$BUILD_TOOLS" >> "$GITHUB_ENV"
 
       - name: Sign release APK
         if: env.KEYSTORE_BASE64 != ''
         run: |
           echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
           VERSION="${GITHUB_REF_NAME#v}"
-          BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
           "$BUILD_TOOLS/zipalign" -f -p 4 apk/release/app-release-unsigned.apk apk/release/aligned.apk
           "$BUILD_TOOLS/apksigner" sign \
             --ks "$RUNNER_TEMP/release.keystore" \
