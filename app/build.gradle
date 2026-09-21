@@ -24,6 +24,11 @@ android {
 
     lint {
         warning 'MissingTranslation'
+        // The per-app VPN allowlist must show every installed app (including
+        // system apps via the "show system apps" toggle), which requires
+        // QUERY_ALL_PACKAGES; a <queries> intent filter only sees apps with
+        // launcher activities. This is the firewall/VPN exemption category.
+        disable 'QueryAllPackagesPermission'
     }
 
     compileOptions {
