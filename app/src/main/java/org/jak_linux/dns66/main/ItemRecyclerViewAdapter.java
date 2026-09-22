@@ -17,7 +17,6 @@ import android.widget.TextView;
 
 import org.jak_linux.dns66.Configuration;
 import org.jak_linux.dns66.FileHelper;
-import org.jak_linux.dns66.ItemChangedListener;
 import org.jak_linux.dns66.MainActivity;
 import org.jak_linux.dns66.R;
 
@@ -26,11 +25,24 @@ import java.util.List;
 public class ItemRecyclerViewAdapter extends RecyclerView.Adapter<ItemRecyclerViewAdapter.ViewHolder> {
     public final List<Configuration.Item> items;
     private final int stateChoices;
+    private final ItemEditListener itemEditListener;
     private Context context;
 
-    public ItemRecyclerViewAdapter(List<Configuration.Item> items, int stateChoices) {
+    /**
+     * A callback for row clicks that open the item editor. Implemented by
+     * the fragment owning the list: the fragment starts the editor activity
+     * itself, so the result is delivered to the fragment (where it survives
+     * MainActivity being recreated while the editor is open) instead of to a
+     * listener captured on the activity.
+     */
+    public interface ItemEditListener {
+        void onEditItem(int position);
+    }
+
+    public ItemRecyclerViewAdapter(List<Configuration.Item> items, int stateChoices, ItemEditListener itemEditListener) {
         this.items = items;
         this.stateChoices = stateChoices;
+        this.itemEditListener = itemEditListener;
     }
 
     // Create new views (invoked by the layout manager)
@@ -114,22 +126,10 @@ public class ItemRecyclerViewAdapter extends RecyclerView.Adapter<ItemRecyclerVi
                 updateState();
                 FileHelper.writeSettings(itemView.getContext(), MainActivity.config);
             } else if (v == view) {
-                // Start edit activity
-                MainActivity main = (MainActivity) v.getContext();
-                main.editItem(stateChoices, item, new ItemChangedListener() {
-                            @Override
-                            public void onItemChanged(Configuration.Item changedItem) {
-                                if (changedItem == null) {
-                                    items.remove(position);
-                                    notifyItemRemoved(position);
-                                } else {
-                                    items.set(position, changedItem);
-                                    ItemRecyclerViewAdapter.this.notifyItemChanged(position);
-                                }
-                                FileHelper.writeSettings(itemView.getContext(), MainActivity.config);
-                            }
-                        }
-                );
+                // Let the owning fragment start the edit activity; it also
+                // applies the result, see the fragments' onActivityResult.
+                if (position != RecyclerView.NO_POSITION)
+                    itemEditListener.onEditItem(position);
             }
         }
     }

@@ -16,7 +16,7 @@
     <string name="switch_onboot">Resume on system start-up</string>
     <string name="activity_edit">Edit Item</string>
     <string name="title">Title</string>
-    <string name="location">Location (URL or host)</string>
+    <string name="location">Location: list URL, host, *.domain, or regex:pattern</string>
     <string name="action">Action</string>
     <string name="cannot_restore_previous_config">Cannot restore previous configuration: %s</string>
     <string name="cannot_read_config">Cannot read configuration: %s</string>

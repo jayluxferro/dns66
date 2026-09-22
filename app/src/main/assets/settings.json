@@ -111,39 +111,34 @@
     "automaticRefresh": false,
     "items": [
       {
-        "title": "StevenBlack's hosts file (includes all others)",
+        "title": "StevenBlack's unified hosts file",
         "location": "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
         "state": 0
       },
       {
-        "title": "Adaway hosts file",
+        "title": "oisd big (domainswild)",
+        "location": "https://big.oisd.nl/domainswild",
+        "state": 0
+      },
+      {
+        "title": "AdAway default blocklist",
         "location": "https://adaway.org/hosts.txt",
-        "state": 2
+        "state": 0
       },
       {
         "title": "Dan Pollock's hosts file",
         "location": "https://someonewhocares.org/hosts/hosts",
-        "state": 2
+        "state": 0
       },
       {
-        "title": "Long-lived malware domains",
-        "location": "https://mirror.cedia.org.ec/malwaredomains/immortal_domains.txt",
-        "state": 2
-      },
-      {
-        "title": "Malware Domain List",
-        "location": "https://www.malwaredomainlist.com/hostslist/hosts.txt",
-        "state": 2
-      },
-      {
-        "title": "Malware domains.com",
-        "location": "https://mirror.cedia.org.ec/malwaredomains/justdomains",
-        "state": 2
-      },
-      {
-        "title": "Peter Lowe\u2019s Ad server list",
+        "title": "Peter Lowe's ad server list",
         "location": "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=1&mimetype=plaintext",
-        "state": 2
+        "state": 0
+      },
+      {
+        "title": "abuse.ch URLhaus (live malware domains)",
+        "location": "https://urlhaus.abuse.ch/downloads/hostfile/",
+        "state": 0
       }
     ]
   },

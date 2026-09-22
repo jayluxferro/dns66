@@ -61,7 +61,6 @@ import java.util.List;
 public class MainActivity extends AppCompatActivity {
     private static final int REQUEST_FILE_OPEN = 1;
     private static final int REQUEST_FILE_STORE = 2;
-    private static final int REQUEST_ITEM_EDIT = 3;
     public static Configuration config;
     private ViewPager viewPager;
     private final BroadcastReceiver vpnServiceBroadcastReceiver = new BroadcastReceiver() {
@@ -72,7 +71,6 @@ public class MainActivity extends AppCompatActivity {
         }
     };
 
-    private ItemChangedListener itemChangedListener = null;
     private MainFragmentPagerAdapter fragmentPagerAdapter;
     private FloatingActionButton floatingActionButton;
     private ViewPager.SimpleOnPageChangeListener pageChangeListener;
@@ -331,37 +329,6 @@ public class MainActivity extends AppCompatActivity {
             }
             recreate();
         }
-        if (requestCode == REQUEST_ITEM_EDIT && resultCode == RESULT_OK) {
-            Configuration.Item item = new Configuration.Item();
-            Log.d("FOOOO", "onActivityResult: item title = " + data.getStringExtra("ITEM_TITLE"));
-            if (data.hasExtra("DELETE")) {
-                onItemEdited(null);
-                return;
-            }
-            item.title = data.getStringExtra("ITEM_TITLE");
-            item.location = data.getStringExtra("ITEM_LOCATION");
-            item.state = data.getIntExtra("ITEM_STATE", 0);
-            onItemEdited(item);
-        }
-    }
-
-    /**
-     * Hand the result of the item editor back to the fragment that opened it.
-     *
-     * itemChangedListener is an instance field: when the activity is
-     * recreated while ItemActivity is open (rotation, process death), the
-     * new instance has no listener, and the fragments were already rebuilt
-     * from a configuration that does not contain the edit. Log and drop the
-     * edit instead of crashing — the editor does not write settings itself,
-     * so the edit is lost either way. (Routing the result through the
-     * fragments would be the real fix.)
-     */
-    private void onItemEdited(Configuration.Item item) {
-        if (itemChangedListener == null) {
-            Log.w("MainActivity", "onItemEdited: activity was recreated while editing, losing item change");
-            return;
-        }
-        itemChangedListener.onItemChanged(item);
     }
 
     private void updateStatus(int status) {
@@ -394,24 +361,5 @@ public class MainActivity extends AppCompatActivity {
         updateStatus(AdVpnService.vpnStatus);
         LocalBroadcastManager.getInstance(this)
                 .registerReceiver(vpnServiceBroadcastReceiver, new IntentFilter(AdVpnService.VPN_UPDATE_STATUS_INTENT));
-    }
-
-    /**
-     * Start the item editor activity
-     *
-     * @param item     an item to edit, may be null
-     * @param listener A listener that will be called once the editor returns
-     */
-    public void editItem(int stateChoices, Configuration.Item item, ItemChangedListener listener) {
-        Intent editIntent = new Intent(this, ItemActivity.class);
-
-        this.itemChangedListener = listener;
-        if (item != null) {
-            editIntent.putExtra("ITEM_TITLE", item.title);
-            editIntent.putExtra("ITEM_LOCATION", item.location);
-            editIntent.putExtra("ITEM_STATE", item.state);
-        }
-        editIntent.putExtra("STATE_CHOICES", stateChoices);
-        startActivityForResult(editIntent, REQUEST_ITEM_EDIT);
     }
 }

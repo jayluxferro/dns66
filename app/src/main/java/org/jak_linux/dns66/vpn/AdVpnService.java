@@ -249,6 +249,10 @@ public class AdVpnService extends VpnService implements Handler.Callback {
                 stopVpn();
                 break;
             case PAUSE:
+                // Persist like STOP: the paused notification does not
+                // survive a reboot, so with isActive still true auto-start
+                // would bring the VPN back running, not paused.
+                getSharedPreferences("state", MODE_PRIVATE).edit().putBoolean("isActive", false).apply();
                 pauseVpn();
                 break;
         }
@@ -291,6 +295,33 @@ public class AdVpnService extends VpnService implements Handler.Callback {
 
 
     private void startVpn(PendingIntent notificationIntent) {
+        // A START can arrive while the paused notification is still posted:
+        // after a pause vpnStatus is STOPPED, so the app sends START rather
+        // than RESUME. Drop the paused notification so it does not sit next
+        // to the running one; cancel() is idempotent, so this also covers
+        // the RESUME path, which cancels it before falling through to here.
+        NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        notificationManager.cancel(NOTIFICATION_ID_PAUSED);
+
+        // Consent never granted or revoked (Settings > VPN): establish()
+        // would keep returning null in the VPN thread, whose generic error
+        // handling would retry forever on something no retry can fix. Do
+        // not even start the thread; forget both persisted start flags and
+        // stop cleanly instead. stopVpn() calls startForeground() before
+        // stopSelf(), satisfying the startForegroundService() contract of
+        // a boot start.
+        if (VpnService.prepare(this) != null) {
+            Log.i(TAG, "startVpn: VPN preparation not confirmed by user, stopping");
+            getSharedPreferences("state", MODE_PRIVATE).edit().putBoolean("isActive", false).apply();
+            Configuration config = FileHelper.loadCurrentSettings(this);
+            if (config != null && config.autoStart) {
+                config.autoStart = false;
+                FileHelper.writeSettings(this, config);
+            }
+            stopVpn();
+            return;
+        }
+
         notificationBuilder.setContentTitle(getString(R.string.notification_title));
         if (notificationIntent != null)
             notificationBuilder.setContentIntent(notificationIntent);

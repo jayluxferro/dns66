@@ -99,6 +99,7 @@ public class RuleDatabaseTest {
     public void testLoadReader() throws Exception {
         RuleDatabase db = new RuleDatabase();
         db.nextBlockedHosts = db.blockedHosts.get();
+        db.nextWildcardBlockedHosts = db.wildcardBlockedHosts.get();
 
         Configuration.Item item = new Configuration.Item();
 
@@ -282,5 +283,119 @@ public class RuleDatabaseTest {
     }
 
     public static class FooException extends RuntimeException {
+    }
+
+    @Test
+    public void testWildcardMatching() throws Exception {
+        RuleDatabase db = new RuleDatabase();
+        db.nextBlockedHosts = db.blockedHosts.get();
+        db.nextWildcardBlockedHosts = db.wildcardBlockedHosts.get();
+
+        Configuration.Item item = new Configuration.Item();
+        item.location = "wildcard-list";
+        item.state = Configuration.Item.STATE_DENY;
+
+        // Bare-domain (wildcard) list: entry and all subdomains block
+        assertTrue(db.loadReader(item, new StringReader("example.com\nother.example.com")));
+        assertTrue(db.isBlocked("example.com"));
+        assertTrue(db.isBlocked("sub.example.com"));
+        assertTrue(db.isBlocked("a.b.example.com"));
+        assertTrue(db.isBlocked("other.example.com"));
+        assertTrue(db.isBlocked("deep.other.example.com"));
+        // Unrelated domains stay unblocked
+        assertFalse(db.isBlocked("notexample.com"));
+        assertFalse(db.isBlocked("example.org"));
+
+        // Hosts-file entry only blocks exactly what it names
+        assertTrue(db.loadReader(item, new StringReader("0.0.0.0 exact.example.net")));
+        assertTrue(db.isBlocked("exact.example.net"));
+        assertFalse(db.isBlocked("sub.exact.example.net"));
+    }
+
+    @Test
+    public void testWildcardAllowRemoval() throws Exception {
+        RuleDatabase db = new RuleDatabase();
+        db.nextBlockedHosts = db.blockedHosts.get();
+        db.nextWildcardBlockedHosts = db.wildcardBlockedHosts.get();
+
+        Configuration.Item deny = new Configuration.Item();
+        deny.location = "wildcard-list";
+        deny.state = Configuration.Item.STATE_DENY;
+        assertTrue(db.loadReader(deny, new StringReader("example.com")));
+        assertTrue(db.isBlocked("sub.example.com"));
+
+        // An allowlist entry removes the wildcard entry entirely
+        Configuration.Item allow = new Configuration.Item();
+        allow.location = "allow-list";
+        allow.state = Configuration.Item.STATE_ALLOW;
+        assertTrue(db.loadReader(allow, new StringReader("example.com")));
+        assertFalse(db.isBlocked("example.com"));
+        assertFalse(db.isBlocked("sub.example.com"));
+    }
+
+    @Test
+    public void testParseLineWildcardMarker() {
+        assertEquals("example.com", RuleDatabase.parseLine("*.example.com"));
+        assertEquals("example.com", RuleDatabase.parseLine("0.0.0.0 *.example.com"));
+        assertNull(RuleDatabase.parseLine("*."));
+    }
+
+    @Test
+    public void testHasHostsFilePrefix() {
+        assertTrue(RuleDatabase.hasHostsFilePrefix("0.0.0.0 example.com"));
+        assertTrue(RuleDatabase.hasHostsFilePrefix("127.0.0.1 example.com"));
+        assertTrue(RuleDatabase.hasHostsFilePrefix("::1 example.com"));
+        assertFalse(RuleDatabase.hasHostsFilePrefix("example.com"));
+        assertFalse(RuleDatabase.hasHostsFilePrefix("0.0.0.0.example.com"));
+    }
+
+    @Test
+    public void testManualEntries() throws Exception {
+        RuleDatabase db = new RuleDatabase();
+        db.nextBlockedHosts = db.blockedHosts.get();
+        db.nextWildcardBlockedHosts = db.wildcardBlockedHosts.get();
+        db.nextRegexPatterns = db.regexPatterns.get();
+
+        // Exact manual entry: only the host itself
+        Configuration.Item exact = new Configuration.Item();
+        exact.location = "exact.example.com";
+        exact.state = Configuration.Item.STATE_DENY;
+        db.loadItem(null, exact);
+        assertTrue(db.isBlocked("exact.example.com"));
+        assertFalse(db.isBlocked("sub.exact.example.com"));
+
+        // Wildcard manual entry: the domain and all subdomains
+        Configuration.Item wildcard = new Configuration.Item();
+        wildcard.location = "*.wild.example.org";
+        wildcard.state = Configuration.Item.STATE_DENY;
+        db.loadItem(null, wildcard);
+        assertTrue(db.isBlocked("wild.example.org"));
+        assertTrue(db.isBlocked("any.wild.example.org"));
+        assertFalse(db.isBlocked("notwild.example.org"));
+
+        // Regex manual entry: matched against the lower-case host
+        Configuration.Item regex = new Configuration.Item();
+        regex.location = "regex:^ads[0-9]+\\.tracker\\.example$";
+        regex.state = Configuration.Item.STATE_DENY;
+        db.loadItem(null, regex);
+        assertTrue(db.isBlocked("ads123.tracker.example"));
+        assertFalse(db.isBlocked("ads.tracker.example"));
+        assertFalse(db.isBlocked("xads123.tracker.example"));
+
+        // Invalid regex is skipped without breaking the load
+        Configuration.Item badRegex = new Configuration.Item();
+        badRegex.location = "regex:^unclosed[";
+        badRegex.state = Configuration.Item.STATE_DENY;
+        db.loadItem(null, badRegex);
+        assertFalse(db.isBlocked("unclosedx"));
+
+        // An allow entry removes a regex by identical pattern text
+        Configuration.Item allowRegex = new Configuration.Item();
+        allowRegex.location = "regex:^ads[0-9]+\\.tracker\\.example$";
+        allowRegex.state = Configuration.Item.STATE_ALLOW;
+        db.loadItem(null, allowRegex);
+        assertFalse(db.isBlocked("ads123.tracker.example"));
+
+        assertFalse(db.isEmpty());
     }
 }

@@ -49,6 +49,17 @@ and dragging them, and removed via the delete action in the entry editor. For
 hosts, a later entry overrides a previous entry; for DNS servers, the first
 server is preferred.
 
+Besides hosts file URLs, hosts entries can be manual rules in three forms:
+a plain hostname blocks exactly that host (`ads.example.com`), `*.example.com`
+blocks the domain and all of its subdomains, and `regex:<pattern>` blocks
+every host the regular expression matches (for example
+`regex:^ads[0-9]+\.example\.com$`). Wildcard-style lists such as oisd's
+`domainswild` are matched the same way, covering subdomains.
+
+The default configuration ships six block lists - StevenBlack's unified
+hosts (with oisd big, AdAway, Dan Pollock's, and Peter Lowe's lists alongside
+a live malware feed from abuse.ch URLhaus) - all enabled out of the box.
+
 Currently, there are some minor usability issues:
 
 * If you change a setting, you must manually restart the VPN service
