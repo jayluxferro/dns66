@@ -212,6 +212,9 @@ public class RuleDatabaseUpdateTaskTest {
             // therefore addBegin/addDone.
             final CountDownLatch downloadStarted = new CountDownLatch(1);
             final CountDownLatch downloadMayFinish = new CountDownLatch(1);
+            // Counted down when the worker leaves run(), so the assertions
+            // below cannot race the interrupt delivery on a slow runner.
+            final CountDownLatch workerDone = new CountDownLatch(1);
             final AtomicBoolean downloadInterrupted = new AtomicBoolean(false);
 
             RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, configuration, false) {
@@ -225,6 +228,8 @@ public class RuleDatabaseUpdateTaskTest {
                                 downloadMayFinish.await();
                             } catch (InterruptedException e) {
                                 downloadInterrupted.set(true);
+                            } finally {
+                                workerDone.countDown();
                             }
                         }
                     };
@@ -248,6 +253,15 @@ public class RuleDatabaseUpdateTaskTest {
             try {
                 task.doInBackground();
 
+                // doInBackground() returns after shutdownNow(), without
+                // waiting for the worker to observe the interrupt; wait for
+                // it here. Clearing our own interrupt flag first: the
+                // canceller sent it, and await() would throw immediately.
+                if (Thread.interrupted()) {
+                    // Expected: this is the cancellation we asked for.
+                }
+                assertTrue("Worker did not finish after cancellation",
+                        workerDone.await(5, TimeUnit.SECONDS));
                 assertTrue("Cancellation did not reach the stuck download", downloadInterrupted.get());
                 assertTrue("Interrupted update must not record errors", task.errors.isEmpty());
             } finally {
