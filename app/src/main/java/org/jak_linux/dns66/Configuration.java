@@ -35,7 +35,7 @@ public class Configuration {
     public static final Gson GSON = new Gson();
     static final int VERSION = 2;
     /* Default tweak level */
-    static final int MINOR_VERSION = 3;
+    static final int MINOR_VERSION = 4;
     private static final String TAG = "Configuration";
     public int version = 1;
     public int minorVersion = 0;
@@ -94,8 +94,38 @@ public class Configuration {
                 break;
             case 3:
                 disableURL("https://blokada.org/blocklists/ddgtrackerradar/standard/hosts.txt");
+            case 4:
+                /* The malwaredomains mirrors are gone and malwaredomainlist.com
+                   is unreachable; replaced by maintained lists. */
+                removeURL("https://mirror.cedia.org.ec/malwaredomains/immortal_domains.txt");
+                removeURL("https://mirror.cedia.org.ec/malwaredomains/justdomains");
+                removeURL("https://www.malwaredomainlist.com/hostslist/hosts.txt");
+
+                /* oisd big (wildcard-style list; subdomains are matched) and
+                   a live malware feed */
+                addURLIfMissing(1, "oisd big (domainswild)", "https://big.oisd.nl/domainswild", Item.STATE_DENY);
+                addURLIfMissing(2, "abuse.ch URLhaus (live malware domains)", "https://urlhaus.abuse.ch/downloads/hostfile/", Item.STATE_DENY);
+
+                /* Ship all lists active (deny) by default */
+                updateURL("https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts", null, Item.STATE_DENY);
+                updateURL("https://adaway.org/hosts.txt", null, Item.STATE_DENY);
+                updateURL("https://someonewhocares.org/hosts/hosts", null, Item.STATE_DENY);
+                updateURL("https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=1&mimetype=plaintext", null, Item.STATE_DENY);
         }
         this.minorVersion = level;
+    }
+
+    /**
+     * Adds a hosts entry only when its location is not configured yet.
+     * Migrations re-run on every load until the settings are written back,
+     * so they must not append duplicates.
+     */
+    public void addURLIfMissing(int index, String title, String location, int state) {
+        for (Item host : hosts.items) {
+            if (host.location.equals(location))
+                return;
+        }
+        addURL(index, title, location, state);
     }
 
     public void updateURL(String oldURL, String newURL, int newState) {

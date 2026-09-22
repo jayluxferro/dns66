@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -241,4 +242,45 @@ public class ConfigurationTest {
         }
     }
 
+
+    @Test
+    public void testMigrationToMinorVersion4() throws Exception {
+        // A pre-0.7.2 config: dead lists present, live lists ignored,
+        // a custom user entry that must survive.
+        String oldConfig = "{\"version\": 2, \"minorVersion\": 3,"
+                + " \"hosts\": {\"enabled\": true, \"items\": ["
+                + "{\"title\": \"StevenBlack's hosts file (includes all others)\", \"location\": \"https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts\", \"state\": 0},"
+                + "{\"title\": \"Adaway hosts file\", \"location\": \"https://adaway.org/hosts.txt\", \"state\": 2},"
+                + "{\"title\": \"Dead mirror 1\", \"location\": \"https://mirror.cedia.org.ec/malwaredomains/immortal_domains.txt\", \"state\": 2},"
+                + "{\"title\": \"Dead mirror 2\", \"location\": \"https://mirror.cedia.org.ec/malwaredomains/justdomains\", \"state\": 2},"
+                + "{\"title\": \"Dead mdl\", \"location\": \"https://www.malwaredomainlist.com/hostslist/hosts.txt\", \"state\": 2},"
+                + "{\"title\": \"My own list\", \"location\": \"https://example.com/my-hosts\", \"state\": 1}"
+                + "]}}";
+        Configuration config = Configuration.read(new java.io.StringReader(oldConfig));
+
+        assertEquals(4, config.minorVersion);
+
+        java.util.List<String> locations = new ArrayList<>();
+        for (Configuration.Item item : config.hosts.items)
+            locations.add(item.location);
+
+        // Dead lists removed, new lists added exactly once, custom kept
+        assertFalse(locations.contains("https://mirror.cedia.org.ec/malwaredomains/immortal_domains.txt"));
+        assertFalse(locations.contains("https://www.malwaredomainlist.com/hostslist/hosts.txt"));
+        assertEquals(1, Collections.frequency(locations, "https://big.oisd.nl/domainswild"));
+        assertEquals(1, Collections.frequency(locations, "https://urlhaus.abuse.ch/downloads/hostfile/"));
+        assertTrue(locations.contains("https://example.com/my-hosts"));
+
+        // Shipped lists are active (deny); the custom allowlist entry keeps its state
+        for (Configuration.Item item : config.hosts.items) {
+            if (item.location.equals("https://adaway.org/hosts.txt"))
+                assertEquals(Configuration.Item.STATE_DENY, item.state);
+            if (item.location.equals("https://example.com/my-hosts"))
+                assertEquals(Configuration.Item.STATE_ALLOW, item.state);
+        }
+
+        // Idempotent: re-running the migration must not duplicate entries
+        Configuration again = Configuration.read(new java.io.StringReader(oldConfig));
+        assertEquals(config.hosts.items.size(), again.hosts.items.size());
+    }
 }
