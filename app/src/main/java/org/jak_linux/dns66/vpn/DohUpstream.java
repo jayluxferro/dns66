@@ -24,6 +24,14 @@ import javax.net.ssl.SSLSocketFactory;
  * pool and reuse it).
  */
 public class DohUpstream extends SecureUpstream {
+    /**
+     * Sanity caps against a hostile or broken server: DNS messages are
+     * bounded by 64 KiB (the 2-byte DNS/TCP length prefix), so anything
+     * beyond these limits is a protocol violation, not a valid answer -
+     * and parsing it would let a peer make us allocate absurd buffers.
+     */
+    private static final int MAX_HEADER_LINE_BYTES = 16384;
+    private static final int MAX_MESSAGE_BYTES = 128 * 1024;
 
     public DohUpstream(VpnService vpnService, DnsUpstream upstream) {
         super(vpnService, upstream);
@@ -36,9 +44,8 @@ public class DohUpstream extends SecureUpstream {
     @Override
     protected byte[] exchange(SSLSocket socket, byte[] query) throws IOException {
         OutputStream out = socket.getOutputStream();
-        String hostHeader = upstream.port == 443 ? upstream.host : upstream.host + ":" + upstream.port;
         byte[] head = ("POST " + upstream.dohPath + " HTTP/1.1\r\n"
-                + "Host: " + hostHeader + "\r\n"
+                + "Host: " + hostHeader(upstream.host, upstream.port) + "\r\n"
                 + "Content-Type: application/dns-message\r\n"
                 + "Accept: application/dns-message\r\n"
                 + "Connection: keep-alive\r\n"
@@ -50,7 +57,16 @@ public class DohUpstream extends SecureUpstream {
 
         InputStream in = socket.getInputStream();
         String statusLine = readLine(in);
-        if (statusLine == null || !statusLine.startsWith("HTTP/1.1 200") && !statusLine.startsWith("HTTP/1.0 200"))
+        // Skip 1xx interim responses (including their headers); the real
+        // answer follows them.
+        while (isInformational(statusLine)) {
+            String interim;
+            while ((interim = readLine(in)) != null && !interim.isEmpty()) {
+                // Ignore interim headers
+            }
+            statusLine = readLine(in);
+        }
+        if (!isOk(statusLine))
             throw new IOException("Unexpected HTTP response: " + statusLine);
 
         int contentLength = -1;
@@ -62,10 +78,20 @@ public class DohUpstream extends SecureUpstream {
                 continue;
             String name = line.substring(0, colon).trim().toLowerCase();
             String value = line.substring(colon + 1).trim();
-            if (name.equals("content-length"))
-                contentLength = Integer.parseInt(value);
-            else if (name.equals("transfer-encoding") && value.toLowerCase().contains("chunked"))
+            if (name.equals("content-length")) {
+                try {
+                    contentLength = Integer.parseInt(value);
+                } catch (NumberFormatException e) {
+                    throw new IOException("Invalid Content-Length: " + value);
+                }
+                if (contentLength < 0 || contentLength > MAX_MESSAGE_BYTES)
+                    throw new IOException("Unreasonable Content-Length: " + contentLength);
+            } else if (name.equals("transfer-encoding") && value.toLowerCase().contains("chunked"))
                 chunked = true;
+            else if (name.equals("content-encoding") && !value.equalsIgnoreCase("identity"))
+                // We never request compression; decompressing would mean
+                // parsing yet another attacker-controlled format.
+                throw new IOException("Unexpected Content-Encoding: " + value);
         }
 
         if (chunked)
@@ -77,6 +103,35 @@ public class DohUpstream extends SecureUpstream {
         return body;
     }
 
+    /** The Host header value for a request to host:port (RFC 7230 section 5.4). */
+    static String hostHeader(String host, int port) {
+        // IPv6 literals must be bracketed, else they are indistinguishable
+        // from host:port (RFC 3986 section 3.2.2).
+        String literal = host.contains(":") ? "[" + host + "]" : host;
+        return port == 443 ? literal : literal + ":" + port;
+    }
+
+    /** An interim (1xx) response whose headers must be skipped before the real status line. */
+    private static boolean isInformational(String statusLine) {
+        if (statusLine == null)
+            return false;
+        return statusLine.startsWith("HTTP/1.1 1") || statusLine.startsWith("HTTP/1.0 1");
+    }
+
+    /** Only 200 is a valid DoH answer (RFC 8484 section 4.1). */
+    private static boolean isOk(String statusLine) {
+        if (statusLine == null || !statusLine.startsWith("HTTP/1."))
+            return false;
+        String[] parts = statusLine.split(" ");
+        if (parts.length < 2)
+            return false;
+        try {
+            return Integer.parseInt(parts[1]) == 200;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
     private static String readLine(InputStream in) throws IOException {
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         int c;
@@ -84,6 +139,8 @@ public class DohUpstream extends SecureUpstream {
             if (c == '\n')
                 break;
             buffer.write(c);
+            if (buffer.size() > MAX_HEADER_LINE_BYTES)
+                throw new IOException("Header line too long");
         }
         if (c == -1 && buffer.size() == 0)
             return null;
@@ -101,7 +158,15 @@ public class DohUpstream extends SecureUpstream {
             if (sizeLine == null)
                 throw new EOFException("EOF in chunked body");
             int semicolon = sizeLine.indexOf(';');
-            int size = Integer.parseInt(semicolon < 0 ? sizeLine : sizeLine.substring(0, semicolon), 16);
+            String sizeField = (semicolon < 0 ? sizeLine : sizeLine.substring(0, semicolon)).trim();
+            int size;
+            try {
+                size = Integer.parseInt(sizeField, 16);
+            } catch (NumberFormatException e) {
+                throw new IOException("Invalid chunk size: " + sizeLine);
+            }
+            if (size < 0 || size > MAX_MESSAGE_BYTES - body.size())
+                throw new IOException("Unreasonable chunk size: " + sizeLine);
             if (size == 0)
                 break;
             byte[] chunk = new byte[size];

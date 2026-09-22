@@ -61,6 +61,13 @@ public final class FileHelper {
     /**
      * Write to the given file in the private files dir, first renaming an old one to .bak
      *
+     * Warning: unsafe for irreplaceable data. The rotation to .bak has already
+     * happened when this returns, and the first write to the returned stream
+     * truncates the live file, so a failed write leaves a broken file behind.
+     * writeSettings() no longer uses this for settings.json for exactly that
+     * reason; it stages writes through a .tmp file instead. Kept as tested
+     * public API.
+     *
      * @param context  A context
      * @param filename A filename as for @{link {@link Context#openFileOutput(String, int)}}
      * @return See @{link {@link Context#openFileOutput(String, int)}}
@@ -82,7 +89,13 @@ public final class FileHelper {
         else
             stream = FileHelper.openRead(context, name);
 
-        return Configuration.read(new InputStreamReader(stream));
+        // Gson does not close the reader, so close the stream ourselves;
+        // closeOrWarn keeps a close error from masking a read error.
+        try {
+            return Configuration.read(new InputStreamReader(stream));
+        } finally {
+            FileHelper.closeOrWarn(stream, "FileHelper", "readConfigFile: Cannot close " + name);
+        }
     }
 
     public static Configuration loadCurrentSettings(Context context) {
@@ -112,14 +125,63 @@ public final class FileHelper {
         }
     }
 
+    /**
+     * Write settings.json atomically: the new configuration first goes to
+     * settings.json.tmp, and the live settings.json is only replaced once the
+     * replacement is complete on disk.
+     *
+     * Writing through openWrite() instead used to truncate settings.json
+     * (openFileOutput uses MODE_PRIVATE) before a single byte of the new
+     * content existed, and the rotation to .bak had already happened. Gson
+     * reports stream errors as JsonIOException, a RuntimeException that a
+     * plain IOException catch does not see, so a failed write left a 0-byte
+     * settings.json — and the next write rotated that empty file over the
+     * good .bak, destroying the last resort of loadPreviousSettings().
+     */
     public static void writeSettings(Context context, Configuration config) {
         Log.d("FileHelper", "writeSettings: Writing the settings file");
+        File out = context.getFileStreamPath("settings.json");
+        File tmp = context.getFileStreamPath("settings.json.tmp");
+
+        Writer writer = null;
+        boolean written = false;
         try {
-            Writer writer = new OutputStreamWriter(FileHelper.openWrite(context, "settings.json"));
+            writer = new OutputStreamWriter(context.openFileOutput(tmp.getName(), Context.MODE_PRIVATE));
             config.write(writer);
-            writer.close();
-        } catch (IOException e) {
+            // close() would flush too, but flush explicitly: only a fully
+            // written file may be rotated into place below.
+            writer.flush();
+            written = true;
+        } catch (Throwable e) {
+            // Throwable, not IOException: JsonIOException is a RuntimeException.
             showToast(context, context.getString(R.string.cannot_write_config, e.getLocalizedMessage()), Toast.LENGTH_SHORT);
+        } finally {
+            if (writer != null) {
+                try {
+                    writer.close();
+                } catch (IOException e) {
+                    if (written) {
+                        // The tail end did not make it to disk; report it, once.
+                        written = false;
+                        showToast(context, context.getString(R.string.cannot_write_config, e.getLocalizedMessage()), Toast.LENGTH_SHORT);
+                    }
+                }
+            }
+        }
+
+        if (!written) {
+            // Drop the partial file; settings.json and .bak stay untouched.
+            tmp.delete();
+            return;
+        }
+
+        // The staged file is complete, rotate it into place. Renaming the old
+        // file to .bak may fail if it does not exist yet; that is fine. If the
+        // final rename fails, settings.json still holds the previous content.
+        out.renameTo(context.getFileStreamPath("settings.json.bak"));
+        if (!tmp.renameTo(out)) {
+            showToast(context, context.getString(R.string.cannot_write_config, "could not rename " + tmp.getName()), Toast.LENGTH_SHORT);
+            tmp.delete();
         }
     }
 

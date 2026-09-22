@@ -15,7 +15,7 @@ Installing
 APKs are built automatically by GitHub Actions and published on the
 [releases page](https://github.com/jayluxferro/dns66/releases): every push to
 `main` produces debug and release APKs as build artifacts, and pushing a tag
-like `v0.6.9` creates a release with a signed APK (see below).
+like `v0.7.0` publishes a release with a signed APK (see below).
 
 Building
 --------
@@ -34,20 +34,20 @@ release APK.
 Using it
 ---------
 On a fresh install, no hosts files are downloaded yet: use the refresh action
-in the toolbar menu (or pull to refresh on a list) to fetch them before the
-blocking becomes effective. On the Hosts tab you can enable *automatically
-refresh hosts files* to have the rule databases updated in the background via
-a scheduled job.
+in the toolbar menu to fetch them before the blocking becomes effective (the
+Apps tab's list also supports pull-to-refresh for reloading the app list). On
+the Hosts tab you can enable *automatically refresh hosts files* to have the
+rule databases updated in the background via a scheduled job.
 
 The first time you start the VPN, Android shows a connection request dialog
 for the VPN permission. Starting on boot can be enabled on the Start tab
 (*Resume on system start-up*), and the VPN notification supports pausing and
 resuming.
 
-Items in the hosts and DNS servers lists can be moved around and removed)
-of the list using standard RecyclerView interactions (long press makes the
-entry movable, swipe to either side removes it). For hosts, a later entry
-overrides a previous entry; for DNS servers, the first server is preferred.
+Entries in the hosts and DNS servers lists can be reordered by long-pressing
+and dragging them, and removed via the delete action in the entry editor. For
+hosts, a later entry overrides a previous entry; for DNS servers, the first
+server is preferred.
 
 Currently, there are some minor usability issues:
 

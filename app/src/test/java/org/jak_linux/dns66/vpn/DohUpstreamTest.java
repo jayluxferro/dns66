@@ -108,6 +108,56 @@ public class DohUpstreamTest {
     }
 
     @Test
+    public void skipsInterim100ResponseBeforeTheRealAnswer() throws Exception {
+        server.interim100 = true;
+        byte[] query = queryWire();
+
+        byte[] response = upstream.resolve(query);
+
+        assertValidDnsResponse(query, response);
+    }
+
+    @Test
+    public void rejectsContentEncodingWeNeverAskedFor() throws Exception {
+        server.gzipEncoded = true;
+        byte[] query = queryWire();
+
+        assertThrows(IOException.class, () -> upstream.resolve(query));
+
+        // The query reached the server; the answer was refused on its
+        // headers alone, without feeding the (compressed) body to the DNS
+        // parser.
+        assertEquals(1, server.receivedQueries.size());
+    }
+
+    @Test
+    public void rejectsUnreasonableContentLengthWithoutAllocating() throws Exception {
+        server.hugeContentLength = true;
+        byte[] query = queryWire();
+
+        assertThrows(IOException.class, () -> upstream.resolve(query));
+    }
+
+    @Test
+    public void rejectsUnreasonableChunkSize() throws Exception {
+        server.chunked = true;
+        server.hugeChunkSize = true;
+        byte[] query = queryWire();
+
+        assertThrows(IOException.class, () -> upstream.resolve(query));
+    }
+
+    @Test
+    public void hostHeaderBracketsIpv6LiteralsAndOmitsDefaultPort() {
+        assertEquals("doh.example.com", DohUpstream.hostHeader("doh.example.com", 443));
+        assertEquals("doh.example.com:8443", DohUpstream.hostHeader("doh.example.com", 8443));
+        // RFC 3986 3.2.2: an unbracketed IPv6 literal in a Host header is
+        // indistinguishable from host:port.
+        assertEquals("[2001:db8::1]", DohUpstream.hostHeader("2001:db8::1", 443));
+        assertEquals("[2001:db8::1]:853", DohUpstream.hostHeader("2001:db8::1", 853));
+    }
+
+    @Test
     public void non200ResponseThrows() throws Exception {
         server.http500 = true;
 

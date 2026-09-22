@@ -40,6 +40,7 @@ import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -149,9 +150,16 @@ public class DnsPacketProxy {
     /** Releases the encrypted upstream connection pools and the resolver threads. */
     void shutdown() {
         resolveExecutor.shutdown();
-        for (SecureUpstream secureUpstream : secureUpstreams.values())
+        // secureUpstreamFor() runs on resolver threads and may still be
+        // putting entries in, so copy out under the lock: iterating the map
+        // directly would race with those puts (ConcurrentModificationException).
+        List<SecureUpstream> upstreams;
+        synchronized (secureUpstreams) {
+            upstreams = new ArrayList<>(secureUpstreams.values());
+            secureUpstreams.clear();
+        }
+        for (SecureUpstream secureUpstream : upstreams)
             secureUpstream.shutdown();
-        secureUpstreams.clear();
     }
 
     /**

@@ -22,6 +22,8 @@ import org.xbill.DNS.Section;
 import java.io.IOException;
 import java.net.Socket;
 
+import javax.net.ssl.SSLException;
+
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -119,6 +121,30 @@ public class DotUpstreamTest {
         server.close();
 
         assertThrows(IOException.class, () -> upstream.resolve(queryWire()));
+    }
+
+    @Test
+    public void hostnameMismatchFailsTheHandshakeWithoutRetry() throws Exception {
+        // The impostor presents a valid-format certificate, but not one
+        // valid for 127.0.0.1 (the host the upstream dials), so hostname
+        // verification must reject it: an encrypted connection to the wrong
+        // identity is worth nothing. Trusting the chain is not enough.
+        try (FakeTlsDnsServer impostor = new FakeTlsDnsServer(false, "dns:impostor.example.com")) {
+            DnsUpstream descriptor = DnsUpstream.parse("tls://127.0.0.1:" + impostor.port());
+            DotUpstream mismatched = new DotUpstream(vpnService, descriptor, FakeTlsDnsServer.trustAllClientFactory());
+            try {
+                // An SSLException (rather than, say, a connect failure)
+                // proves the certificate was rejected by the check, and the
+                // fresh-socket failure must propagate: a mismatch is never
+                // stale-connection material to retry into a success.
+                IOException e = assertThrows(IOException.class, () -> mismatched.resolve(queryWire()));
+                assertTrue("Expected a TLS verification failure, got: " + e, e instanceof SSLException);
+                // The query must never have reached the impostor.
+                assertEquals(0, impostor.receivedQueries.size());
+            } finally {
+                mismatched.shutdown();
+            }
+        }
     }
 
     @Test

@@ -4,7 +4,9 @@
  */
 package org.jak_linux.dns66.vpn;
 
+import android.annotation.SuppressLint;
 import android.net.VpnService;
+import android.os.Build;
 import android.util.Log;
 
 import java.io.IOException;
@@ -13,6 +15,7 @@ import java.net.Socket;
 import java.util.Deque;
 import java.util.concurrent.ConcurrentLinkedDeque;
 
+import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 
@@ -28,7 +31,12 @@ import javax.net.ssl.SSLSocketFactory;
 public abstract class SecureUpstream {
     private static final String TAG = "SecureUpstream";
 
-    private static final int CONNECT_TIMEOUT_MS = 5000;
+    /**
+     * Three seconds: resolvers fail over to their next configured server
+     * quickly, so we must lose the connect race before they give up on us
+     * (observed on device with the default resolver timeout).
+     */
+    private static final int CONNECT_TIMEOUT_MS = 3000;
     private static final int READ_TIMEOUT_MS = 5000;
     private static final int MAX_IDLE_SOCKETS = 3;
     /**
@@ -79,6 +87,11 @@ public abstract class SecureUpstream {
                 else
                     closeQuietly(socket);
                 return response;
+            } catch (RuntimeException e) {
+                // A runtime error is a bug, not connection staleness: release
+                // the socket and let it propagate - no retry.
+                closeQuietly(socket);
+                throw e;
             } catch (IOException e) {
                 closeQuietly(socket);
                 if (fresh)
@@ -128,13 +141,29 @@ public abstract class SecureUpstream {
         }
     }
 
+    @SuppressLint("NewApi")
     private SSLSocket createSocket() throws IOException {
         Socket socket = new Socket();
         // Keep our own upstream traffic out of the VPN
-        vpnService.protect(socket);
+        if (!vpnService.protect(socket))
+            Log.w(TAG, "protect() failed for " + upstream);
         socket.connect(new InetSocketAddress(upstream.host, upstream.port), CONNECT_TIMEOUT_MS);
         SSLSocket sslSocket = (SSLSocket) sslSocketFactory.createSocket(socket, upstream.host, upstream.port, true);
         sslSocket.setSoTimeout(READ_TIMEOUT_MS);
+        // Verify that the certificate the server presents matches the host we
+        // dialed. Without this, SSLSockets only validate the chain - any
+        // CA-signed certificate would be accepted for every upstream,
+        // including the shipped IP-literal defaults. The handshake below
+        // enforces the check and fails with an SSLException (an IOException)
+        // on mismatch, which resolve() propagates instead of retrying.
+        // Requires API 24; on API 23 the check stays off. (SDK_INT == 0 is
+        // the JVM unit-test runtime, where the method exists; lint cannot
+        // model that clause, hence the targeted suppression.)
+        if (Build.VERSION.SDK_INT == 0 || Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            SSLParameters sslParameters = sslSocket.getSSLParameters();
+            sslParameters.setEndpointIdentificationAlgorithm("HTTPS");
+            sslSocket.setSSLParameters(sslParameters);
+        }
         sslSocket.startHandshake();
         return sslSocket;
     }

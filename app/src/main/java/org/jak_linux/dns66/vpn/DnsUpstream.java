@@ -75,6 +75,10 @@ public class DnsUpstream {
             String host = uri.getHost();
             if (host == null || uri.getPath() == null || uri.getPath().isEmpty())
                 throw new URISyntaxException(location, "DoH location needs a host and a path");
+            // URI#getPort() returns -1 when absent and cannot be negative or
+            // out of range otherwise, so only 0 needs rejecting here.
+            if (uri.getPort() == 0)
+                throw new IllegalArgumentException("Port out of range (1..65535): " + location);
             int port = uri.getPort() == -1 ? DEFAULT_DOH_PORT : uri.getPort();
             return new DnsUpstream(Protocol.DOH, host, port, uri.getPath(), null);
         }
@@ -100,15 +104,34 @@ public class DnsUpstream {
             String host = s.substring(1, close);
             int port = defaultPort;
             if (s.length() > close + 1 && s.charAt(close + 1) == ':')
-                port = Integer.parseInt(s.substring(close + 2));
+                port = parsePort(s.substring(close + 2));
             return new HostAndPort(host, port);
         }
         int colon = s.lastIndexOf(':');
         if (colon > -1 && s.indexOf(':') == colon) {
             // Exactly one colon: host:port
-            return new HostAndPort(s.substring(0, colon), Integer.parseInt(s.substring(colon + 1)));
+            return new HostAndPort(s.substring(0, colon), parsePort(s.substring(colon + 1)));
         }
         return new HostAndPort(s, defaultPort);
+    }
+
+    /**
+     * Rejects ports that cannot be bound or connected to at parse time.
+     * Otherwise a broken location would only fail per query (with an
+     * obscure error at connect time); the IllegalArgumentException is
+     * caught by configure()'s per-item handling, so the item is skipped
+     * when the VPN is set up.
+     */
+    private static int parsePort(String s) {
+        int port;
+        try {
+            port = Integer.parseInt(s);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Invalid port: " + s);
+        }
+        if (port < 1 || port > 65535)
+            throw new IllegalArgumentException("Port out of range (1..65535): " + s);
+        return port;
     }
 
     private static class HostAndPort {

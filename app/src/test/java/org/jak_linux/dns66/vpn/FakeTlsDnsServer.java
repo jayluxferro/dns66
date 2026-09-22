@@ -30,8 +30,10 @@ import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -39,11 +41,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLServerSocket;
-import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509ExtendedTrustManager;
+import javax.net.ssl.X509TrustManager;
 
 /**
  * In-process TLS server speaking just enough DoT and DoH for the upstream
@@ -53,18 +54,23 @@ import javax.net.ssl.X509ExtendedTrustManager;
  * wire.
  *
  * Certificate handling: the server needs real key material, which we
- * generate once per JVM by invoking {@code keytool} (shipped with every
- * JDK, which gradle unit tests need anyway). The client side never checks
- * the chain - tests pass a trust-everything factory into the package-private
- * upstream constructors - so the certificate merely has to exist and be
- * parseable.
+ * generate once per JVM (per SAN set) by invoking {@code keytool} (shipped
+ * with every JDK, which gradle unit tests need anyway). Tests pass a
+ * trust-everything factory into the package-private upstream constructors,
+ * so the certificate never has to chain to a real CA - but it does need
+ * subjectAltNames matching the host the upstreams dial (127.0.0.1), because
+ * {@link SecureUpstream} enforces hostname verification via endpoint
+ * identification. Use a different SAN set to build servers whose
+ * certificate must be rejected for the dialed host.
  */
 final class FakeTlsDnsServer implements Closeable {
     private static final String KEYSTORE_PASSWORD = "dns66-test";
     private static final byte[] ANSWER_ADDRESS = {(byte) 192, 0, 2, 99};
+    /** SANs matching the host the tests dial: the DNS name and the IP literal. */
+    private static final String DEFAULT_SAN = "dns:localhost,ip:127.0.0.1";
 
-    /** Cached so both upstream test classes share one keytool invocation. */
-    private static volatile SSLContext cachedServerContext;
+    /** Cached per SAN set, so both upstream test classes share keytool invocations. */
+    private static final Map<String, SSLContext> cachedServerContexts = new HashMap<>();
     private static volatile SSLSocketFactory cachedTrustAllFactory;
 
     private final SSLServerSocket serverSocket;
@@ -93,18 +99,37 @@ final class FakeTlsDnsServer implements Closeable {
     volatile boolean chunked = false;
     /** DoH only: answer with HTTP 500. */
     volatile boolean http500 = false;
+    /** DoH only: send a 100 Continue (with headers) before the real response. */
+    volatile boolean interim100 = false;
+    /** DoH only: declare a Content-Length far beyond any DNS message. */
+    volatile boolean hugeContentLength = false;
+    /** DoH only: claim gzip Content-Encoding (we never request compression). */
+    volatile boolean gzipEncoded = false;
+    /** DoH only: start the chunked body with a size line no parser should accept. */
+    volatile boolean hugeChunkSize = false;
 
     /** Speak DoH (HTTP/1.1) on accepted connections; DoT (2-byte framing) otherwise. */
     private final boolean dohMode;
 
     FakeTlsDnsServer(boolean dohMode) throws IOException {
+        this(dohMode, DEFAULT_SAN);
+    }
+
+    /**
+     * @param sanExtension keytool SAN extension for the presented certificate;
+     *                     pass a set that does NOT match 127.0.0.1/localhost to
+     *                     test hostname verification failures
+     */
+    FakeTlsDnsServer(boolean dohMode, String sanExtension) throws IOException {
         this.dohMode = dohMode;
         // Bound immediately, so tests can connect as soon as the
         // constructor returns; connections queue in the listen backlog.
         SSLServerSocket bound;
         try {
-            bound = (SSLServerSocket) serverContext().getServerSocketFactory()
+            bound = (SSLServerSocket) serverContext(sanExtension).getServerSocketFactory()
                     .createServerSocket(0, 50, InetAddress.getByName("127.0.0.1"));
+        } catch (IOException e) {
+            throw e;
         } catch (Exception e) {
             throw new IOException("Cannot start fake TLS DNS server", e);
         }
@@ -173,6 +198,12 @@ final class FakeTlsDnsServer implements Closeable {
                 return; // EOF between requests: connection closed
             receivedQueries.add(query);
             OutputStream out = socket.getOutputStream();
+            if (interim100) {
+                // An interim response: headers, empty line, then the real one.
+                out.write("HTTP/1.1 100 Continue\r\nX-Dns66-Test: interim\r\n\r\n"
+                        .getBytes(StandardCharsets.US_ASCII));
+                out.flush();
+            }
             if (http500) {
                 // A real 500-ing server may or may not close; closing keeps
                 // the test simple, and the client must fail on the status
@@ -182,6 +213,32 @@ final class FakeTlsDnsServer implements Closeable {
                 out.flush();
                 socket.close();
                 return;
+            }
+            if (hugeContentLength) {
+                // ~2 GB claimed; the client must reject the header without
+                // allocating for it. Closing afterwards keeps the test finite.
+                out.write(("HTTP/1.1 200 OK\r\nContent-Type: application/dns-message\r\n"
+                        + "Content-Length: 2000000000\r\n\r\n")
+                        .getBytes(StandardCharsets.US_ASCII));
+                out.flush();
+                socket.close();
+                return;
+            }
+            if (gzipEncoded) {
+                // Body is still a valid DNS message; the client must refuse it
+                // on the header alone, since it never asked for compression.
+                byte[] response = dnsResponseFor(query);
+                out.write(("HTTP/1.1 200 OK\r\nContent-Type: application/dns-message\r\n"
+                        + "Content-Encoding: gzip\r\n"
+                        + "Content-Length: " + response.length + "\r\n\r\n")
+                        .getBytes(StandardCharsets.US_ASCII));
+                out.write(response);
+                out.flush();
+                if (oneQueryPerConnection) {
+                    socket.close();
+                    return;
+                }
+                continue;
             }
             byte[] response = dnsResponseFor(query);
             if (chunked)
@@ -246,6 +303,13 @@ final class FakeTlsDnsServer implements Closeable {
         byte[] second = Arrays.copyOfRange(response, split, response.length);
         out.write(("HTTP/1.1 200 OK\r\nContent-Type: application/dns-message\r\n"
                 + "Transfer-Encoding: chunked\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+        if (hugeChunkSize) {
+            // 0xFFFFFFFF does not fit in an int, 2 GiB is far beyond any DNS
+            // message; either way the client must reject the size line.
+            out.write("FFFFFFFF;ext=1\r\n".getBytes(StandardCharsets.US_ASCII));
+            out.flush();
+            return; // no body follows; the client should already be failing
+        }
         out.write((Integer.toHexString(first.length) + ";ext=1\r\n").getBytes(StandardCharsets.US_ASCII));
         out.write(first);
         out.write("\r\n".getBytes(StandardCharsets.US_ASCII));
@@ -297,17 +361,18 @@ final class FakeTlsDnsServer implements Closeable {
     }
 
     /** Server-side context presenting the throwaway self-signed certificate. */
-    static SSLContext serverContext() throws Exception {
-        if (cachedServerContext != null)
-            return cachedServerContext;
+    static SSLContext serverContext(String sanExtension) throws Exception {
         synchronized (FakeTlsDnsServer.class) {
-            if (cachedServerContext == null)
-                cachedServerContext = generateServerContext();
-            return cachedServerContext;
+            SSLContext context = cachedServerContexts.get(sanExtension);
+            if (context == null) {
+                context = generateServerContext(sanExtension);
+                cachedServerContexts.put(sanExtension, context);
+            }
+            return context;
         }
     }
 
-    private static SSLContext generateServerContext() throws Exception {
+    private static SSLContext generateServerContext(String sanExtension) throws Exception {
         // keytool refuses to write into an existing (empty) file, so hand
         // it a path that does not exist yet, in a fresh temp directory.
         Path keystoreDir = Files.createTempDirectory("dns66-test");
@@ -317,7 +382,7 @@ final class FakeTlsDnsServer implements Closeable {
                 "-alias", "dns66-test",
                 "-keyalg", "RSA", "-keysize", "2048", "-sigalg", "SHA256withRSA",
                 "-dname", "CN=dns66-test",
-                "-ext", "SAN=dns:localhost,ip:127.0.0.1",
+                "-ext", "SAN=" + sanExtension,
                 "-validity", "2",
                 "-keystore", keystorePath.toString(),
                 "-storetype", "PKCS12",
@@ -348,39 +413,30 @@ final class FakeTlsDnsServer implements Closeable {
     }
 
     /**
-     * Client-side factory accepting any server certificate. An
-     * {@link X509ExtendedTrustManager} with empty checks, so no hostname or
-     * chain validation happens regardless of endpoint identification
-     * settings.
+     * Client-side factory accepting any server certificate chain, but
+     * deliberately backed by a <em>plain</em> {@link X509TrustManager}:
+     * JSSE uses custom {@link X509ExtendedTrustManager}s as-is and would
+     * then silently ignore {@code setEndpointIdentificationAlgorithm}
+     * (verified on JDK 21), while plain trust managers get wrapped in a
+     * wrapper that performs the hostname check - the same split as on
+     * Android, where the platform default factory's trust manager honors
+     * endpoint identification. With this factory, the unit tests exercise
+     * exactly what {@link SecureUpstream} does in production: chain
+     * validation is skipped (the certificate is self-signed), hostname
+     * verification is not.
      */
     static SSLSocketFactory trustAllClientFactory() throws Exception {
         if (cachedTrustAllFactory != null)
             return cachedTrustAllFactory;
         synchronized (FakeTlsDnsServer.class) {
             if (cachedTrustAllFactory == null) {
-                TrustManager[] trustAll = new TrustManager[]{new X509ExtendedTrustManager() {
+                TrustManager[] trustAll = new TrustManager[]{new X509TrustManager() {
                     @Override
                     public void checkClientTrusted(X509Certificate[] chain, String authType) {
                     }
 
                     @Override
-                    public void checkClientTrusted(X509Certificate[] chain, String authType, Socket socket) {
-                    }
-
-                    @Override
-                    public void checkClientTrusted(X509Certificate[] chain, String authType, SSLEngine engine) {
-                    }
-
-                    @Override
                     public void checkServerTrusted(X509Certificate[] chain, String authType) {
-                    }
-
-                    @Override
-                    public void checkServerTrusted(X509Certificate[] chain, String authType, Socket socket) {
-                    }
-
-                    @Override
-                    public void checkServerTrusted(X509Certificate[] chain, String authType, SSLEngine engine) {
                     }
 
                     @Override

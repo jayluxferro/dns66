@@ -27,6 +27,7 @@ import android.net.VpnService;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Message;
+import android.os.SystemClock;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
@@ -49,6 +50,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class AdVpnService extends VpnService implements Handler.Callback {
 
     public static final int NOTIFICATION_ID_STATE = 10;
+    public static final int NOTIFICATION_ID_PAUSED = 11;
     public static final int REQUEST_CODE_START = 43;
     public static final int REQUEST_CODE_PAUSE = 42;
 
@@ -79,32 +81,61 @@ public class AdVpnService extends VpnService implements Handler.Callback {
     private static final int VPN_MSG_STATUS_UPDATE = 0;
     private static final int VPN_MSG_NETWORK_CHANGED = 1;
     private static final String TAG = "VpnService";
+    /* For this long after a (re-)registration, network callbacks only update
+     * availableNetworks without telling the VPN thread: registerNetworkCallback
+     * replays all currently present networks, and the thread that just started
+     * configures with exactly those networks. Relaying the replay would make
+     * it reconnect again and again before it is even up. Genuine changes
+     * within the window are rare and self-heal through the thread's own
+     * retry loop. */
+    private static final long NETWORK_SETTLE_MILLIS = 2000;
     // TODO: Temporary Hack til refactor is done
     public static int vpnStatus = VPN_STATUS_STOPPED;
     private final Handler handler = new MyHandler(this);
-    private AdVpnThread vpnThread = new AdVpnThread(this, new AdVpnThread.Notify() {
-        @Override
-        public void run(int value) {
-            handler.sendMessage(handler.obtainMessage(VPN_MSG_STATUS_UPDATE, value, 0));
-        }
-    });
+    private AdVpnThread vpnThread = createVpnThread();
     private final Set<Network> availableNetworks = Collections.newSetFromMap(new ConcurrentHashMap<Network, Boolean>());
+    /* Whether networkCallback is currently registered: registering it a
+     * second time throws IllegalArgumentException */
+    private boolean networkCallbackRegistered = false;
+    /* When networkCallback was last registered (SystemClock.elapsedRealtime()) */
+    private long networkCallbackRegisteredAt = 0;
+    /* Set while onDestroy is running: startForeground must not be called
+     * again, it would replace the paused notification. */
+    private boolean destroying = false;
     private final ConnectivityManager.NetworkCallback networkCallback = new ConnectivityManager.NetworkCallback() {
         @Override
         public void onAvailable(Network network) {
             availableNetworks.add(network);
-            handler.sendMessage(handler.obtainMessage(VPN_MSG_NETWORK_CHANGED, 1, 0));
+            notifyNetworkChanged(1);
         }
 
         @Override
         public void onLost(Network network) {
             availableNetworks.remove(network);
-            handler.sendMessage(handler.obtainMessage(VPN_MSG_NETWORK_CHANGED, availableNetworks.isEmpty() ? 0 : 1, 0));
+            notifyNetworkChanged(availableNetworks.isEmpty() ? 0 : 1);
         }
     };
     private final NotificationCompat.Builder notificationBuilder = new NotificationCompat.Builder(this, NotificationChannels.SERVICE_RUNNING)
             .setSmallIcon(R.drawable.ic_state_deny) // TODO: Notification icon
             .setPriority(Notification.PRIORITY_MIN);
+
+    /* Creates a VPN thread reporting status updates back to our handler.
+     * Recreated on demand: stopVpn() nulls the thread, and a later start
+     * on the same service instance needs a fresh one. */
+    private AdVpnThread createVpnThread() {
+        return new AdVpnThread(this, new AdVpnThread.Notify() {
+            @Override
+            public void run(int value) {
+                handler.sendMessage(handler.obtainMessage(VPN_MSG_STATUS_UPDATE, value, 0));
+            }
+        });
+    }
+
+    private void notifyNetworkChanged(int arg) {
+        if (SystemClock.elapsedRealtime() - networkCallbackRegisteredAt < NETWORK_SETTLE_MILLIS)
+            return;
+        handler.sendMessage(handler.obtainMessage(VPN_MSG_NETWORK_CHANGED, arg, 0));
+    }
 
     public static int vpnStatusToTextId(int status) {
         switch (status) {
@@ -186,10 +217,28 @@ public class AdVpnService extends VpnService implements Handler.Callback {
     @Override
     public int onStartCommand(@Nullable Intent intent, int flags, int startId) {
         Log.i(TAG, "onStartCommand" + intent);
-        switch (intent == null ? Command.START : Command.values()[intent.getIntExtra("COMMAND", Command.START.ordinal())]) {
+        Command command = Command.START;
+        if (intent != null) {
+            int ordinal = intent.getIntExtra("COMMAND", Command.START.ordinal());
+            Command[] values = Command.values();
+            if (ordinal >= 0 && ordinal < values.length) {
+                command = values[ordinal];
+            } else {
+                // The service is guarded by BIND_VPN_SERVICE, so this can only
+                // be a stale intent of ours (e.g. from before an update that
+                // reordered the enum). Ignore the command instead of crashing
+                // on the lookup, but keep the START_STICKY return.
+                Log.w(TAG, "onStartCommand: Ignoring invalid command " + ordinal);
+                return Service.START_STICKY;
+            }
+        }
+        switch (command) {
             case RESUME:
+                // Cancel only the notifications we own: cancelAll() here also
+                // dropped unrelated notifications like rule update errors.
                 NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                notificationManager.cancelAll();
+                notificationManager.cancel(NOTIFICATION_ID_PAUSED);
+                notificationManager.cancel(NOTIFICATION_ID_STATE);
                 // fallthrough
             case START:
                 getSharedPreferences("state", MODE_PRIVATE).edit().putBoolean("isActive", true).apply();
@@ -210,7 +259,7 @@ public class AdVpnService extends VpnService implements Handler.Callback {
     private void pauseVpn() {
         stopVpn();
         NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        notificationManager.notify(NOTIFICATION_ID_STATE, new NotificationCompat.Builder(this, NotificationChannels.SERVICE_PAUSED)
+        notificationManager.notify(NOTIFICATION_ID_PAUSED, new NotificationCompat.Builder(this, NotificationChannels.SERVICE_PAUSED)
                 .setSmallIcon(R.drawable.ic_state_deny) // TODO: Notification icon
                 .setPriority(Notification.PRIORITY_LOW)
                 .setColor(ContextCompat.getColor(this, R.color.colorPrimaryDark))
@@ -225,7 +274,11 @@ public class AdVpnService extends VpnService implements Handler.Callback {
         int notificationTextId = vpnStatusToTextId(status);
         notificationBuilder.setContentTitle(getString(notificationTextId));
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O || FileHelper.loadCurrentSettings(getApplicationContext()).showNotification) {
+        // While destroying, do not call startForeground again: it would
+        // replace the paused notification (posted with notify()) and get
+        // cancelled with the service's foreground teardown. The service is
+        // going away, only the status broadcast below still matters.
+        if (!destroying && (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O || FileHelper.loadCurrentSettings(getApplicationContext()).showNotification)) {
             // When targeting 34+, the foreground service type must be passed explicitly.
             int fgsType = Build.VERSION.SDK_INT >= 34 ? ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE : 0;
             ServiceCompat.startForeground(this, NOTIFICATION_ID_STATE, notificationBuilder.build(), fgsType);
@@ -246,17 +299,28 @@ public class AdVpnService extends VpnService implements Handler.Callback {
         // NOT_VPN is a default capability of a network request, so our own VPN network is
         // never reported here and cannot trigger reconnect loops.
         ConnectivityManager connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-        connectivityManager.registerNetworkCallback(
-                new NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build(),
-                networkCallback);
+        if (!networkCallbackRegistered) {
+            // Networks may have changed while we were not running. The
+            // callback replays all currently present networks right after
+            // registration, so clearing here recomputes our connectivity
+            // state from scratch.
+            availableNetworks.clear();
+            connectivityManager.registerNetworkCallback(
+                    new NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build(),
+                    networkCallback);
+            networkCallbackRegistered = true;
+            networkCallbackRegisteredAt = SystemClock.elapsedRealtime();
+        }
 
         restartVpnThread();
     }
 
     private void restartVpnThread() {
         if (vpnThread == null) {
-            Log.i(TAG, "restartVpnThread: Not restarting thread, could not find thread.");
-            return;
+            // Only stopVpn() nulls the thread; recreate it so that starting
+            // the VPN again works on the same service instance.
+            Log.i(TAG, "restartVpnThread: Recreating previously stopped thread.");
+            vpnThread = createVpnThread();
         }
 
         vpnThread.stopThread();
@@ -269,11 +333,22 @@ public class AdVpnService extends VpnService implements Handler.Callback {
     }
 
     private void waitForNetVpn() {
+        if (vpnThread == null) {
+            // Stale message after stopVpn(), nothing left to pause.
+            Log.i(TAG, "waitForNetVpn: Not waiting for network, could not find thread.");
+            return;
+        }
         stopVpnThread();
         updateVpnStatus(VPN_STATUS_WAITING_FOR_NETWORK);
     }
 
     private void reconnect() {
+        if (vpnThread == null) {
+            // Stale message after stopVpn(): restarting here would bring the
+            // VPN back up against the user's decision to stop it.
+            Log.i(TAG, "reconnect: Not reconnecting, could not find thread.");
+            return;
+        }
         updateVpnStatus(VPN_STATUS_RECONNECTING);
         restartVpnThread();
     }
@@ -283,12 +358,18 @@ public class AdVpnService extends VpnService implements Handler.Callback {
         if (vpnThread != null)
             stopVpnThread();
         vpnThread = null;
-        try {
-            ConnectivityManager connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-            connectivityManager.unregisterNetworkCallback(networkCallback);
-        } catch (IllegalArgumentException e) {
-            Log.i(TAG, "Ignoring exception on unregistering network callback");
+        if (networkCallbackRegistered) {
+            try {
+                ConnectivityManager connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+                connectivityManager.unregisterNetworkCallback(networkCallback);
+                networkCallbackRegistered = false;
+            } catch (IllegalArgumentException e) {
+                Log.i(TAG, "Ignoring exception on unregistering network callback");
+            }
         }
+        // Forget the networks seen by the callback, so a later start
+        // computes the connectivity state fresh.
+        availableNetworks.clear();
         updateVpnStatus(VPN_STATUS_STOPPED);
         stopSelf();
     }
@@ -296,6 +377,7 @@ public class AdVpnService extends VpnService implements Handler.Callback {
     @Override
     public void onDestroy() {
         Log.i(TAG, "Destroyed, shutting down");
+        destroying = true;
         stopVpn();
     }
 

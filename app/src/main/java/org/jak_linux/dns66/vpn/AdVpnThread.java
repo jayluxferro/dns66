@@ -38,6 +38,7 @@ import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.Inet4Address;
@@ -65,6 +66,8 @@ class AdVpnThread implements Runnable, DnsPacketProxy.EventLoop {
     /* Maximum number of responses we want to wait for */
     private static final int DNS_MAXIMUM_WAITING = 1024;
     private static final long DNS_TIMEOUT_SEC = 10;
+    /* Byte written to the wake pipe by queueDeviceWrite() */
+    private static final byte[] WAKE_BYTE = {1};
     /* Upstream DNS servers, indexed by our IP */
     final ArrayList<DnsUpstream> upstreamDnsServers = new ArrayList<>();
     private final VpnService vpnService;
@@ -79,8 +82,10 @@ class AdVpnThread implements Runnable, DnsPacketProxy.EventLoop {
     private final VpnWatchdog vpnWatchDog = new VpnWatchdog();
 
     private Thread thread = null;
-    private FileDescriptor mBlockFd = null;
-    private FileDescriptor mInterruptFd = null;
+    /* Both pipe fds are written/closed from other threads than the VPN
+     * thread, so they are volatile. */
+    private volatile FileDescriptor mBlockFd = null;
+    private volatile FileDescriptor mInterruptFd = null;
     /**
      * Number of iterations since we last cleared the pcap4j cache
      */
@@ -147,6 +152,9 @@ class AdVpnThread implements Runnable, DnsPacketProxy.EventLoop {
             dnsPacketProxy.initialize(vpnService, upstreamDnsServers);
             vpnWatchDog.initialize(FileHelper.loadCurrentSettings(vpnService).watchDog);
         } catch (InterruptedException e) {
+            // We are leaving before the shutdown() at the end of run() can
+            // run; release the executors initialize() set up anyway.
+            dnsPacketProxy.shutdown();
             return;
         }
 
@@ -209,10 +217,18 @@ class AdVpnThread implements Runnable, DnsPacketProxy.EventLoop {
         // Allocate the buffer for a single packet.
         byte[] packet = new byte[32767];
 
-        // A pipe we can interrupt the poll() call with by closing the interruptFd end
+        // A pipe used for waking the poll() call below: queueDeviceWrite()
+        // writes a wake byte to the blockFd end, and closing the interruptFd
+        // end (stopThread) makes poll report POLLERR on blockFd, stopping us.
+        // Both ends are non-blocking, so wake writes and drains never block,
+        // no matter what the other threads are doing.
         FileDescriptor[] pipes = Os.pipe();
         mInterruptFd = pipes[0];
         mBlockFd = pipes[1];
+        // The pipe stays blocking: queueDeviceWrite() only ever writes one
+        // byte per queued response and the loop drains it every round, so
+        // the 64 KiB pipe capacity is never a limit. (Os.fcntlInt for
+        // O_NONBLOCK would require API 30.)
 
         // Authenticate and configure the virtual network interface.
         try (ParcelFileDescriptor pfd = configure()) {
@@ -239,18 +255,29 @@ class AdVpnThread implements Runnable, DnsPacketProxy.EventLoop {
         StructPollfd blockFd = new StructPollfd();
         blockFd.fd = mBlockFd;
         blockFd.events = (short) (OsConstants.POLLHUP | OsConstants.POLLERR);
+        // Snapshot the read end of the wake pipe: stopThread() closes (and
+        // nulls) it from the service thread while we are polling.
+        FileDescriptor wakeFd = mInterruptFd;
+        if (wakeFd == null) {
+            Log.i(TAG, "Told to stop VPN");
+            return false;
+        }
+        StructPollfd interruptFd = new StructPollfd();
+        interruptFd.fd = wakeFd;
+        interruptFd.events = (short) OsConstants.POLLIN;
 
         if (!deviceWrites.isEmpty())
             deviceFd.events |= (short) OsConstants.POLLOUT;
 
-        StructPollfd[] polls = new StructPollfd[2 + dnsIn.size()];
+        StructPollfd[] polls = new StructPollfd[3 + dnsIn.size()];
         polls[0] = deviceFd;
         polls[1] = blockFd;
+        polls[2] = interruptFd;
         {
             int i = -1;
             for (WaitingOnSocketPacket wosp : dnsIn) {
                 i++;
-                StructPollfd pollFd = polls[2 + i] = new StructPollfd();
+                StructPollfd pollFd = polls[3 + i] = new StructPollfd();
                 pollFd.fd = ParcelFileDescriptor.fromDatagramSocket(wosp.socket).getFileDescriptor();
                 pollFd.events = (short) OsConstants.POLLIN;
             }
@@ -266,6 +293,18 @@ class AdVpnThread implements Runnable, DnsPacketProxy.EventLoop {
             Log.i(TAG, "Told to stop VPN");
             return false;
         }
+        if (interruptFd.revents != 0) {
+            if ((interruptFd.revents & OsConstants.POLLIN) != 0) {
+                // Woken up by queueDeviceWrite(): drain the wake bytes and
+                // run another round, so the queued writes are armed with
+                // POLLOUT and sent to the device.
+                drainWakePipe(wakeFd);
+            } else {
+                // POLLNVAL: the fd was closed by stopThread() while polling
+                Log.i(TAG, "Told to stop VPN");
+                return false;
+            }
+        }
         // Need to do this before reading from the device, otherwise a new insertion there could
         // invalidate one of the sockets we want to read from either due to size or time out
         // constraints
@@ -275,7 +314,7 @@ class AdVpnThread implements Runnable, DnsPacketProxy.EventLoop {
             while (iter.hasNext()) {
                 i++;
                 WaitingOnSocketPacket wosp = iter.next();
-                if ((polls[i + 2].revents & OsConstants.POLLIN) != 0) {
+                if ((polls[i + 3].revents & OsConstants.POLLIN) != 0) {
                     Log.d(TAG, "Read from DNS socket" + wosp.socket);
                     iter.remove();
                     handleRawDnsResponse(wosp.packet, wosp.socket);
@@ -293,6 +332,21 @@ class AdVpnThread implements Runnable, DnsPacketProxy.EventLoop {
         }
 
         return true;
+    }
+
+    /* Reads the wake byte(s) written by queueDeviceWrite(). One read per
+     * call: POLLIN guarantees at least one byte is waiting, and any bytes
+     * beyond the buffer simply retrigger POLLIN on the next round, so the
+     * pipe drains itself without ever blocking on an empty read. */
+    private void drainWakePipe(FileDescriptor wakeFd) {
+        byte[] buffer = new byte[64];
+        try {
+            Os.read(wakeFd, buffer, 0, buffer.length);
+        } catch (ErrnoException e) {
+            Log.w(TAG, "drainWakePipe: Could not read wake bytes", e);
+        } catch (InterruptedIOException e) {
+            Log.w(TAG, "drainWakePipe: Interrupted while reading wake bytes", e);
+        }
     }
 
     private void writeToDevice(FileOutputStream outFd) throws VpnNetworkException {
@@ -363,6 +417,23 @@ class AdVpnThread implements Runnable, DnsPacketProxy.EventLoop {
 
     public void queueDeviceWrite(IpPacket ipOutPacket) {
         deviceWrites.add(ipOutPacket.getRawData());
+        // Responses from encrypted (DoT/DoH) upstreams are queued here by
+        // executor threads; nothing else would wake the poll loop, which
+        // blocks indefinitely when the watchdog is off. Write a byte to the
+        // wake pipe so the loop sees POLLIN on its interruptFd. The blocking
+        // write cannot stall: one byte is written per queued response and the
+        // loop drains the pipe every round, far below its capacity.
+        FileDescriptor blockFd = mBlockFd;
+        if (blockFd == null)
+            return; // runVpn() has not created the wake pipe yet
+        try {
+            Os.write(blockFd, WAKE_BYTE, 0, 1);
+        } catch (ErrnoException e) {
+            if (e.errno != OsConstants.EAGAIN)
+                Log.w(TAG, "queueDeviceWrite: Could not write wake byte", e);
+        } catch (InterruptedIOException e) {
+            Log.w(TAG, "queueDeviceWrite: Interrupted while writing wake byte", e);
+        }
     }
 
     void newDNSServer(VpnService.Builder builder, String format, byte[] ipv6Template, DnsUpstream upstream) throws UnknownHostException {
@@ -547,7 +618,7 @@ class AdVpnThread implements Runnable, DnsPacketProxy.EventLoop {
 
         if (config.dnsServers.enabled) {
             for (Configuration.Item item : config.dnsServers.items) {
-                if (item.state == Configuration.Item.STATE_ALLOW && item.location.contains(":"))
+                if (item.state == Configuration.Item.STATE_ALLOW && locationIsIpV6(item.location))
                     return true;
             }
         }
@@ -557,6 +628,35 @@ class AdVpnThread implements Runnable, DnsPacketProxy.EventLoop {
         }
 
         return false;
+    }
+
+    /**
+     * Determines whether a server location string refers to an IPv6 address,
+     * mirroring the host parsing of {@link DnsUpstream#parse}: the scheme is
+     * stripped before looking at colons, so it is not fooled by the colons in
+     * "https:" or "tls:". A bracketed host ([2001:db8::1]:853) is always an
+     * IPv6 literal; exactly one colon is a "host:port" pair; several colons
+     * are an unbracketed IPv6 literal.
+     */
+    static boolean locationIsIpV6(String location) {
+        if (location == null)
+            return false;
+        String remainder = location;
+        if (remainder.startsWith("https://")) {
+            remainder = remainder.substring("https://".length());
+            // Only the authority (host[:port]) can hold the colon that
+            // matters; paths and query strings may carry their own colons.
+            int slash = remainder.indexOf('/');
+            if (slash >= 0)
+                remainder = remainder.substring(0, slash);
+        } else if (remainder.startsWith("tls://")) {
+            remainder = remainder.substring("tls://".length());
+        }
+        if (remainder.startsWith("["))
+            return true;
+        int firstColon = remainder.indexOf(':');
+        int lastColon = remainder.lastIndexOf(':');
+        return firstColon >= 0 && firstColon != lastColon;
     }
 
     public interface Notify {

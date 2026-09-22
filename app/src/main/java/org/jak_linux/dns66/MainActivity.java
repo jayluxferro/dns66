@@ -335,14 +335,33 @@ public class MainActivity extends AppCompatActivity {
             Configuration.Item item = new Configuration.Item();
             Log.d("FOOOO", "onActivityResult: item title = " + data.getStringExtra("ITEM_TITLE"));
             if (data.hasExtra("DELETE")) {
-                this.itemChangedListener.onItemChanged(null);
+                onItemEdited(null);
                 return;
             }
             item.title = data.getStringExtra("ITEM_TITLE");
             item.location = data.getStringExtra("ITEM_LOCATION");
             item.state = data.getIntExtra("ITEM_STATE", 0);
-            this.itemChangedListener.onItemChanged(item);
+            onItemEdited(item);
         }
+    }
+
+    /**
+     * Hand the result of the item editor back to the fragment that opened it.
+     *
+     * itemChangedListener is an instance field: when the activity is
+     * recreated while ItemActivity is open (rotation, process death), the
+     * new instance has no listener, and the fragments were already rebuilt
+     * from a configuration that does not contain the edit. Log and drop the
+     * edit instead of crashing — the editor does not write settings itself,
+     * so the edit is lost either way. (Routing the result through the
+     * fragments would be the real fix.)
+     */
+    private void onItemEdited(Configuration.Item item) {
+        if (itemChangedListener == null) {
+            Log.w("MainActivity", "onItemEdited: activity was recreated while editing, losing item change");
+            return;
+        }
+        itemChangedListener.onItemChanged(item);
     }
 
     private void updateStatus(int status) {

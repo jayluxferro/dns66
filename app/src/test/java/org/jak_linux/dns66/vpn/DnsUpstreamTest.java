@@ -190,6 +190,39 @@ public class DnsUpstreamTest {
     }
 
     @Test
+    public void portZeroIsRejected() {
+        assertThrows(IllegalArgumentException.class, () -> DnsUpstream.parse("tls://192.0.2.1:0"));
+        assertThrows(IllegalArgumentException.class, () -> DnsUpstream.parse("192.0.2.1:0"));
+        assertThrows(IllegalArgumentException.class, () -> DnsUpstream.parse("[2001:db8::1]:0"));
+        assertThrows(IllegalArgumentException.class, () -> DnsUpstream.parse("https://doh.example.com:0/dns-query"));
+    }
+
+    @Test
+    public void portAbove65535IsRejected() {
+        // Would otherwise parse fine and only blow up per query at connect
+        // time; the range check makes it a configure-time skip instead.
+        assertThrows(IllegalArgumentException.class, () -> DnsUpstream.parse("tls://192.0.2.1:65536"));
+        assertThrows(IllegalArgumentException.class, () -> DnsUpstream.parse("192.0.2.1:99999"));
+        assertThrows(IllegalArgumentException.class, () -> DnsUpstream.parse("[2001:db8::1]:99999"));
+    }
+
+    @Test
+    public void negativePortIsRejected() {
+        assertThrows(IllegalArgumentException.class, () -> DnsUpstream.parse("tls://192.0.2.1:-1"));
+    }
+
+    @Test
+    public void nonNumericPortIsRejected() {
+        assertThrows(IllegalArgumentException.class, () -> DnsUpstream.parse("tls://192.0.2.1:dns"));
+    }
+
+    @Test
+    public void portBoundariesAreAccepted() throws Exception {
+        assertEquals(1, DnsUpstream.parse("tls://192.0.2.1:1").port);
+        assertEquals(65535, DnsUpstream.parse("tls://192.0.2.1:65535").port);
+    }
+
+    @Test
     public void toStringRoundTripsForAllProtocols() throws Exception {
         assertEquals("192.0.2.1:53", DnsUpstream.parse("192.0.2.1").toString());
         assertEquals("192.0.2.1:5353", DnsUpstream.parse("192.0.2.1:5353").toString());

@@ -81,7 +81,14 @@ public class RuleDatabaseUpdateJobService extends JobService {
             }
         };
         task.execute();
-        return false;
+        // Return true: the downloads run asynchronously, so the job must stay
+        // in the "running" state until the task finishes. Returning false would
+        // tell the JobScheduler the work is already done, dropping the
+        // framework's protection (e.g. against cached-app freezing on API 31+)
+        // while downloads are still in flight, and jobFinished() below would
+        // target an already-finished job. Both terminal callbacks of the task
+        // (onPostExecute / onCancelled) call jobFinished() exactly once.
+        return true;
     }
 
     @Override

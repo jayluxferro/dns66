@@ -150,6 +150,30 @@ public class AdVpnThreadTest {
 
         servers.add(Inet6Address.getByName("::1"));
         assertTrue(thread.hasIpV6Servers(config, servers));
+
+        // Regression: the colon of a scheme ("https:") must not enable the
+        // IPv6 alias plumbing for a plain IPv4 secure upstream.
+        item0.location = "https://1.1.1.1/dns-query";
+        item0.state = Configuration.Item.STATE_ALLOW;
+        List<InetAddress> v4OnlyServers = new ArrayList<>();
+        v4OnlyServers.add(Inet6Address.getByName("127.0.0.1"));
+        assertFalse(thread.hasIpV6Servers(config, v4OnlyServers));
+    }
+
+    @Test
+    // Scheme stripping must not mistake "https:" or "tls:" for an IPv6
+    // literal; this mirrors the host parsing of DnsUpstream.parse.
+    public void testLocationIsIpV6() throws Exception {
+        assertFalse(AdVpnThread.locationIsIpV6("https://1.1.1.1/dns-query"));
+        assertFalse(AdVpnThread.locationIsIpV6("tls://8.8.8.8"));
+        assertTrue(AdVpnThread.locationIsIpV6("tls://[2001:db8::1]:853"));
+        assertTrue(AdVpnThread.locationIsIpV6("2001:4860:4860::8888"));
+        assertFalse(AdVpnThread.locationIsIpV6("1.1.1.1"));
+        assertFalse(AdVpnThread.locationIsIpV6("1.1.1.1:53"));
+        // Bracketed hosts and query strings carrying colons
+        assertTrue(AdVpnThread.locationIsIpV6("https://[2001:db8::1]/dns-query"));
+        assertFalse(AdVpnThread.locationIsIpV6("https://dns.example.com/dns-query?dns=a:b"));
+        assertFalse(AdVpnThread.locationIsIpV6(null));
     }
 
     @Test

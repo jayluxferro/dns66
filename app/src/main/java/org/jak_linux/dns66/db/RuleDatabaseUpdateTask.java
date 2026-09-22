@@ -26,6 +26,10 @@ import org.jak_linux.dns66.MainActivity;
 import org.jak_linux.dns66.NotificationChannels;
 import org.jak_linux.dns66.R;
 
+import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLConnection;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -48,6 +52,12 @@ public class RuleDatabaseUpdateTask extends AsyncTask<Void, Void, Void> {
     ArrayList<String> errors = new ArrayList<>();
     List<String> pending = new ArrayList<>();
     List<String> done = new ArrayList<>();
+    // Snapshot of configuration.hosts.items taken at construction time. The live
+    // list is shared with the UI thread (MainActivity.refresh passes the active
+    // configuration), where add/delete/toggle can run while this task iterates it
+    // on worker threads; iterating an aliased list would throw
+    // ConcurrentModificationException and kill the refresh mid-way.
+    private List<Configuration.Item> items;
     private NotificationManager notificationManager;
     private NotificationCompat.Builder notificationBuilder;
 
@@ -55,6 +65,9 @@ public class RuleDatabaseUpdateTask extends AsyncTask<Void, Void, Void> {
         Log.d(TAG, "RuleDatabaseUpdateTask: Begin");
         this.context = context;
         this.configuration = configuration;
+        // The configuration is optional (unit tests construct bare tasks); only
+        // its items list is read below.
+        this.items = configuration == null ? new ArrayList<>() : new ArrayList<>(configuration.hosts.items);
 
         if (notifications)
             setupNotificationBuilder();
@@ -69,7 +82,7 @@ public class RuleDatabaseUpdateTask extends AsyncTask<Void, Void, Void> {
                 .setContentTitle(context.getString(R.string.updating_hostfiles))
                 .setSmallIcon(R.drawable.ic_refresh)
                 .setColor(ContextCompat.getColor(context, R.color.colorPrimaryDark))
-                .setProgress(configuration.hosts.items.size(), 0, false);
+                .setProgress(items.size(), 0, false);
     }
 
     @Override
@@ -78,7 +91,8 @@ public class RuleDatabaseUpdateTask extends AsyncTask<Void, Void, Void> {
         long start = System.currentTimeMillis();
         ExecutorService executor = Executors.newCachedThreadPool();
 
-        for (Configuration.Item item : configuration.hosts.items) {
+        // Iterate the snapshot taken in the constructor, never the live list.
+        for (Configuration.Item item : items) {
             RuleDatabaseItemUpdateRunnable runnable = getCommand(item);
             if (runnable.shouldDownload())
                 executor.execute(runnable);
@@ -94,6 +108,14 @@ public class RuleDatabaseUpdateTask extends AsyncTask<Void, Void, Void> {
 
                 Log.d(TAG, "doInBackground: Waiting for completion");
             } catch (InterruptedException e) {
+                // The task was cancelled (AsyncTask.cancel(true) from onStopJob
+                // interrupts this thread). Stop waiting and interrupt the
+                // workers, so in-flight downloads abort instead of pinning this
+                // task (and with Fix 1, the job) for up to another hour. The
+                // interrupt flag is deliberately not restored: postExecute()
+                // below still has to run to finish the cancellation cleanly.
+                executor.shutdownNow();
+                break;
             }
         }
         long end = System.currentTimeMillis();
@@ -125,7 +147,7 @@ public class RuleDatabaseUpdateTask extends AsyncTask<Void, Void, Void> {
      * @param uri URI to check
      */
     private boolean isGarbage(Uri uri) {
-        for (Configuration.Item item : configuration.hosts.items) {
+        for (Configuration.Item item : items) {
             if (Uri.parse(item.location).equals(uri))
                 return false;
         }
@@ -137,7 +159,21 @@ public class RuleDatabaseUpdateTask extends AsyncTask<Void, Void, Void> {
      */
     @NonNull
     RuleDatabaseItemUpdateRunnable getCommand(Configuration.Item item) {
-        return new RuleDatabaseItemUpdateRunnable(this, context, item);
+        return new RuleDatabaseItemUpdateRunnable(this, context, item) {
+            @Override
+            HttpURLConnection internalOpenHttpConnection(URL url) throws IOException {
+                // url.openConnection() does not return an HttpURLConnection for
+                // every location reaching this point (e.g. a non-http scheme);
+                // the blind cast in the base implementation would kill this
+                // worker thread with an unhandled ClassCastException before any
+                // error is recorded. Throwing IOException instead routes the
+                // failure through run()'s existing error reporting.
+                URLConnection connection = url.openConnection();
+                if (!(connection instanceof HttpURLConnection))
+                    throw new IOException("Not an HTTP(S) URL: " + url);
+                return (HttpURLConnection) connection;
+            }
+        };
     }
 
     /**
