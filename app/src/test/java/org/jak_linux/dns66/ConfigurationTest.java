@@ -138,10 +138,12 @@ public class ConfigurationTest {
         wl.resolve(pm, onVpn, notOnVpn);
 
         assertTrue(onVpn.contains(BuildConfig.APPLICATION_ID));
-        assertTrue(notOnVpn.contains("system-app"));
+        // System apps are filtered like any other app now
+        assertTrue(onVpn.contains("system-app"));
         assertTrue(onVpn.contains("data-app"));
         assertTrue(onVpn.contains("system-browser"));
         assertTrue(onVpn.contains("data-browser"));
+        assertTrue(notOnVpn.isEmpty());
 
         // Default intelligent on vpn
         onVpn.clear();
@@ -179,7 +181,7 @@ public class ConfigurationTest {
         assertNotNull(config.dnsServers);
         assertNotNull(config.dnsServers.items);
         assertTrue(config.ipV6Support);
-        assertFalse(config.watchDog);
+        assertTrue(config.watchDog); // enabled by migration level 5
         assertFalse(config.nightMode);
         assertTrue(config.showNotification);
         assertFalse(config.autoStart);
@@ -258,7 +260,7 @@ public class ConfigurationTest {
                 + "]}}";
         Configuration config = Configuration.read(new java.io.StringReader(oldConfig));
 
-        assertEquals(4, config.minorVersion);
+        assertEquals(5, config.minorVersion);
 
         java.util.List<String> locations = new ArrayList<>();
         for (Configuration.Item item : config.hosts.items)
@@ -269,6 +271,8 @@ public class ConfigurationTest {
         assertFalse(locations.contains("https://www.malwaredomainlist.com/hostslist/hosts.txt"));
         assertEquals(1, Collections.frequency(locations, "https://big.oisd.nl/domainswild"));
         assertEquals(1, Collections.frequency(locations, "https://urlhaus.abuse.ch/downloads/hostfile/"));
+        assertEquals(1, Collections.frequency(locations, "https://raw.githubusercontent.com/jayluxferro/block-ads/master/extra_list/hosts.txt"));
+        assertTrue(config.watchDog);
         assertTrue(locations.contains("https://example.com/my-hosts"));
 
         // Shipped lists are active (deny); the custom allowlist entry keeps its state

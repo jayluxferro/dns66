@@ -96,7 +96,7 @@
     <string name="notification_action_pause">Pause</string>
     <string name="allowlist_on_vpn">No apps</string>
     <string name="allowlist_not_on_vpn">All apps</string>
-    <string name="allowlist_intelligent">System apps except browsers</string>
+    <string name="allowlist_intelligent">All apps use the VPN (system apps included)</string>
     <string name="ipv6_support_description">Disable this if your network does not use IPv6 or you cannot start the service.</string>
     <string name="ipv6_support">IPv6 support</string>
     <string name="action_logcat">Logcat</string>
@@ -115,6 +115,6 @@
     <string-array name="allowlist_defaults">
         <item>No apps bypass by default</item>
         <item>All apps bypass by default</item>
-        <item>System apps bypass by default</item>
+        <item>No apps bypass by default (system apps included)</item>
     </string-array>
 </resources>

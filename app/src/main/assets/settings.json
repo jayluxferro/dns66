@@ -1,10 +1,10 @@
 {
   "version": 2,
-  "minorVersion": 4,
+  "minorVersion": 5,
   "autoStart": true,
   "showNotification": true,
   "nightMode": false,
-  "watchDog": false,
+  "watchDog": true,
   "ipV6Support": true,
   "dnsServers": {
     "enabled": true,
@@ -123,6 +123,11 @@
       {
         "title": "AdAway default blocklist",
         "location": "https://adaway.org/hosts.txt",
+        "state": 0
+      },
+      {
+        "title": "block-ads (combined)",
+        "location": "https://raw.githubusercontent.com/jayluxferro/block-ads/master/extra_list/hosts.txt",
         "state": 0
       },
       {

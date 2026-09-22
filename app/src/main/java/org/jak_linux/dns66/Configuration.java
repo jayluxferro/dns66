@@ -35,7 +35,7 @@ public class Configuration {
     public static final Gson GSON = new Gson();
     static final int VERSION = 2;
     /* Default tweak level */
-    static final int MINOR_VERSION = 4;
+    static final int MINOR_VERSION = 5;
     private static final String TAG = "Configuration";
     public int version = 1;
     public int minorVersion = 0;
@@ -111,6 +111,11 @@ public class Configuration {
                 updateURL("https://adaway.org/hosts.txt", null, Item.STATE_DENY);
                 updateURL("https://someonewhocares.org/hosts/hosts", null, Item.STATE_DENY);
                 updateURL("https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=1&mimetype=plaintext", null, Item.STATE_DENY);
+            case 5:
+                addURLIfMissing(3, "block-ads (combined)", "https://raw.githubusercontent.com/jayluxferro/block-ads/master/extra_list/hosts.txt", Item.STATE_DENY);
+                /* The watchdog is on by default now that reconnects are
+                   reliable; probe wait already exceeds cold DoT/DoH time. */
+                watchDog = true;
         }
         this.minorVersion = level;
     }
@@ -273,12 +278,9 @@ public class Configuration {
                 } else if (defaultMode == DEFAULT_MODE_NOT_ON_VPN) {
                     notOnVpn.add(applicationInfo.packageName);
                 } else if (defaultMode == DEFAULT_MODE_INTELLIGENT) {
-                    if (webBrowserPackageNames.contains(applicationInfo.packageName))
-                        onVpn.add(applicationInfo.packageName);
-                    else if ((applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0)
-                        notOnVpn.add(applicationInfo.packageName);
-                    else
-                        onVpn.add(applicationInfo.packageName);
+                    // Everything uses the VPN unless the user excluded it;
+                    // system apps are filtered like any other app.
+                    onVpn.add(applicationInfo.packageName);
                 }
             }
         }

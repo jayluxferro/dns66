@@ -40,7 +40,10 @@ class VpnWatchdog {
     // Polling is quadrupled on every success, and values range from 4s to 1h8m.
     private static final int POLL_TIMEOUT_START = 1000;
     private static final int POLL_TIMEOUT_END = 4096000;
-    private static final int POLL_TIMEOUT_WAITING = 7000;
+    // Must exceed the worst case for a cold encrypted upstream to resolve
+    // the probe (3s connect + 5s read), or a slow first DoT/DoH answer
+    // would falsely look like a dead connection.
+    private static final int POLL_TIMEOUT_WAITING = 10000;
     private static final int POLL_TIMEOUT_GROW = 4;
 
     // Reconnect penalty ranges from 0s to 5s, in increments of 200 ms.

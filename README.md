@@ -40,9 +40,11 @@ the Hosts tab you can enable *automatically refresh hosts files* to have the
 rule databases updated in the background via a scheduled job.
 
 The first time you start the VPN, Android shows a connection request dialog
-for the VPN permission. Starting on boot can be enabled on the Start tab
-(*Resume on system start-up*), and the VPN notification supports pausing and
-resuming.
+for the VPN permission. Starting on boot is enabled on the Start tab (*Resume on system
+start-up*), the VPN notification supports pausing and resuming, and the
+connection watchdog (on by default) restarts the VPN if it ever stops
+responding. All apps use the VPN by default - system apps included - and any
+app (including system apps) can be excluded individually on the Apps tab.
 
 Entries in the hosts and DNS servers lists can be reordered by long-pressing
 and dragging them, and removed via the delete action in the entry editor. For
@@ -56,9 +58,10 @@ every host the regular expression matches (for example
 `regex:^ads[0-9]+\.example\.com$`). Wildcard-style lists such as oisd's
 `domainswild` are matched the same way, covering subdomains.
 
-The default configuration ships six block lists - StevenBlack's unified
-hosts (with oisd big, AdAway, Dan Pollock's, and Peter Lowe's lists alongside
-a live malware feed from abuse.ch URLhaus) - all enabled out of the box.
+The default configuration ships seven block lists - StevenBlack's unified
+hosts, oisd big, the block-ads combined list, AdAway, Dan Pollock's, and
+Peter Lowe's lists alongside a live malware feed from abuse.ch URLhaus - all
+enabled out of the box.
 
 Currently, there are some minor usability issues:
 
