@@ -58,9 +58,41 @@ public class ItemRecyclerViewAdapter extends RecyclerView.Adapter<ItemRecyclerVi
     public void onBindViewHolder(ViewHolder holder, int position) {
         holder.item = items.get(position);
         holder.titleView.setText(items.get(position).title);
-        holder.subtitleView.setText(items.get(position).location);
+        holder.subtitleView.setText(buildStateSummary(items.get(position)));
+        holder.locationView.setText(items.get(position).location);
 
         holder.updateState();
+    }
+
+    /**
+     * Builds the status line for a row: the entry's state and, for
+     * downloadable lists, when it was last refreshed (the downloaded file's
+     * modification time). Manual rules show a hint instead.
+     */
+    private String buildStateSummary(Configuration.Item item) {
+        StringBuilder summary = new StringBuilder(stateLabel(item.state));
+        if (stateChoices == 3) {
+            java.io.File file = FileHelper.getItemFile(context, item);
+            if (file == null) {
+                summary.append(" · ").append(context.getString(R.string.manual_rule));
+            } else if (file.exists() && file.lastModified() > 0) {
+                summary.append(" · ").append(context.getString(R.string.updated_prefix)).append(' ')
+                        .append(android.text.format.DateUtils.getRelativeTimeSpanString(file.lastModified()));
+            } else {
+                summary.append(" · ").append(context.getString(R.string.never_refreshed));
+            }
+        }
+        return summary.toString();
+    }
+
+    private String stateLabel(int state) {
+        if (stateChoices == 2) {
+            // DNS servers: two states with their own labels
+            return context.getString(state == Configuration.Item.STATE_ALLOW
+                    ? R.string.use_dns_server : R.string.do_not_use_dns_server);
+        }
+        String[] states = context.getResources().getStringArray(R.array.item_states);
+        return states[state];
     }
 
     @Override
@@ -72,6 +104,7 @@ public class ItemRecyclerViewAdapter extends RecyclerView.Adapter<ItemRecyclerVi
         public final View view;
         public final TextView titleView;
         public final TextView subtitleView;
+        public final TextView locationView;
         public final ImageView iconView;
         public Configuration.Item item;
 
@@ -80,6 +113,7 @@ public class ItemRecyclerViewAdapter extends RecyclerView.Adapter<ItemRecyclerVi
             this.view = view;
             titleView = (TextView) view.findViewById(R.id.item_title);
             subtitleView = (TextView) view.findViewById(R.id.item_subtitle);
+            locationView = (TextView) view.findViewById(R.id.item_location);
             iconView = (ImageView) view.findViewById(R.id.item_enabled);
 
             view.setOnClickListener(this);

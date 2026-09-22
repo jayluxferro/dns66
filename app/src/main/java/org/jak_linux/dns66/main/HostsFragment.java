@@ -7,13 +7,18 @@
  */
 package org.jak_linux.dns66.main;
 
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.os.Bundle;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.recyclerview.widget.ItemTouchHelper;
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -26,6 +31,7 @@ import org.jak_linux.dns66.ItemActivity;
 import org.jak_linux.dns66.MainActivity;
 import org.jak_linux.dns66.R;
 import org.jak_linux.dns66.db.RuleDatabaseUpdateJobService;
+import org.jak_linux.dns66.db.RuleDatabaseUpdateTask;
 
 import static android.app.Activity.RESULT_OK;
 
@@ -47,7 +53,41 @@ public class HostsFragment extends Fragment implements FloatingActionButtonFragm
 
     private ItemRecyclerViewAdapter mAdapter;
 
+    private SwipeRefreshLayout swipeRefresh;
+
+    private final BroadcastReceiver updateReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if (RuleDatabaseUpdateTask.ACTION_UPDATE_STARTED.equals(action)) {
+                if (swipeRefresh != null)
+                    swipeRefresh.setRefreshing(true);
+            } else if (RuleDatabaseUpdateTask.ACTION_UPDATE_FINISHED.equals(action)) {
+                if (swipeRefresh != null)
+                    swipeRefresh.setRefreshing(false);
+                // Row summaries show the last-refresh time: rebind them
+                if (mAdapter != null)
+                    mAdapter.notifyDataSetChanged();
+            }
+        }
+    };
+
     public HostsFragment() {
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(RuleDatabaseUpdateTask.ACTION_UPDATE_STARTED);
+        filter.addAction(RuleDatabaseUpdateTask.ACTION_UPDATE_FINISHED);
+        LocalBroadcastManager.getInstance(requireContext()).registerReceiver(updateReceiver, filter);
+    }
+
+    @Override
+    public void onStop() {
+        LocalBroadcastManager.getInstance(requireContext()).unregisterReceiver(updateReceiver);
+        super.onStop();
     }
 
     @Override
@@ -77,6 +117,18 @@ public class HostsFragment extends Fragment implements FloatingActionButtonFragm
 
         ItemTouchHelper itemTouchHelper = new ItemTouchHelper(new ItemTouchHelperCallback(mAdapter));
         itemTouchHelper.attachToRecyclerView(mRecyclerView);
+
+        // Pull-to-refresh and the toolbar refresh action both show the
+        // spinner; it stops when the update task broadcasts completion.
+        swipeRefresh = (SwipeRefreshLayout) rootView.findViewById(R.id.hosts_swipe_refresh);
+        swipeRefresh.setOnRefreshListener(new SwipeRefreshLayout.OnRefreshListener() {
+            @Override
+            public void onRefresh() {
+                MainActivity main = (MainActivity) getActivity();
+                if (main != null)
+                    main.refreshFromFragment();
+            }
+        });
 
         Switch hostEnabled = (Switch) rootView.findViewById(R.id.host_enabled);
         hostEnabled.setChecked(MainActivity.config.hosts.enabled);

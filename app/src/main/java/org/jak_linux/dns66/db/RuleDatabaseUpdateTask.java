@@ -44,6 +44,10 @@ import java.util.concurrent.atomic.AtomicReference;
  * remote servers.
  */
 public class RuleDatabaseUpdateTask extends AsyncTask<Void, Void, Void> {
+    /** Broadcast with the update task started running (menu/pull refresh). */
+    public static final String ACTION_UPDATE_STARTED = "org.jak_linux.dns66.db.UPDATE_STARTED";
+    /** Broadcast when an update run finished (success or errors); sent for background job runs too. */
+    public static final String ACTION_UPDATE_FINISHED = "org.jak_linux.dns66.db.UPDATE_FINISHED";
     public static final AtomicReference<List<String>> lastErrors = new AtomicReference<>(null);
     private static final String TAG = "RuleDatabaseUpdateTask";
     private static final int UPDATE_NOTIFICATION_ID = 42;
@@ -200,6 +204,15 @@ public class RuleDatabaseUpdateTask extends AsyncTask<Void, Void, Void> {
      */
     private synchronized void postExecute() {
         Log.d(TAG, "postExecute: Sending notification");
+        if (context != null) {
+            try {
+                androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(context)
+                        .sendBroadcast(new android.content.Intent(ACTION_UPDATE_FINISHED));
+            } catch (Exception e) {
+                // Not worth failing an otherwise finished update over
+                Log.d(TAG, "postExecute: Could not notify update listeners", e);
+            }
+        }
         try {
             RuleDatabase.getInstance().initialize(context);
         } catch (InterruptedException e) {

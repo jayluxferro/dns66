@@ -34,10 +34,12 @@ release APK.
 Using it
 ---------
 On a fresh install, no hosts files are downloaded yet: use the refresh action
-in the toolbar menu to fetch them before the blocking becomes effective (the
-Apps tab's list also supports pull-to-refresh for reloading the app list). On
-the Hosts tab you can enable *automatically refresh hosts files* to have the
-rule databases updated in the background via a scheduled job.
+in the toolbar menu (or pull-to-refresh on the Hosts list, which shows a
+progress indicator while updating) to fetch them before the blocking becomes
+effective. Each hosts entry shows its state (deny/allow/ignore) and when it
+was last refreshed. On the Hosts tab you can enable *automatically refresh
+hosts files* to have the rule databases updated in the background via a
+scheduled job.
 
 The first time you start the VPN, Android shows a connection request dialog
 for the VPN permission. Starting on boot is enabled on the Start tab (*Resume on system

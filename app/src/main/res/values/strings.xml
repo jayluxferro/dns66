@@ -31,6 +31,9 @@
     <string name="notification_reconnecting_error">Reconnecting error</string>
     <string name="notification_stopped">Stopped</string>
     <string name="notification_title">DNS66</string>
+    <string name="manual_rule">manual rule</string>
+    <string name="updated_prefix">updated</string>
+    <string name="never_refreshed">not downloaded yet</string>
     <string-array name="item_states">
         <item>Deny</item>
         <item>Allow</item>

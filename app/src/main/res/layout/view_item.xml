@@ -32,6 +32,17 @@
         android:textAppearance="?android:attr/textAppearanceListItemSecondary"
         android:textColor="?android:attr/textColorSecondary"/>
 
+    <TextView
+        android:id="@+id/item_location"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/item_subtitle"
+        android:layout_toEndOf="@+id/item_enabled"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textAppearance="?android:attr/textAppearanceListItemSecondary"
+        android:textColor="?android:attr/textColorTertiary"/>
+
     <ImageView
         android:id="@+id/item_enabled"
         android:layout_width="38dp"

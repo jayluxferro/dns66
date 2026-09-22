@@ -289,9 +289,15 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
+    public void refreshFromFragment() {
+        refresh();
+    }
+
     private void refresh() {
         final RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(getApplicationContext(), config, true);
 
+        androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(this)
+                .sendBroadcast(new Intent(RuleDatabaseUpdateTask.ACTION_UPDATE_STARTED));
 
         task.execute();
     }
