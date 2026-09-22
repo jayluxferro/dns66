@@ -78,6 +78,11 @@ public class HostsFragment extends Fragment implements FloatingActionButtonFragm
     @Override
     public void onStart() {
         super.onStart();
+        // A refresh that finished while this fragment was stopped never
+        // delivered its broadcast (the receiver was unregistered), and a
+        // spinner left spinning forever is worse than none at all.
+        if (swipeRefresh != null)
+            swipeRefresh.setRefreshing(false);
         IntentFilter filter = new IntentFilter();
         filter.addAction(RuleDatabaseUpdateTask.ACTION_UPDATE_STARTED);
         filter.addAction(RuleDatabaseUpdateTask.ACTION_UPDATE_FINISHED);

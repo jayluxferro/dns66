@@ -127,10 +127,12 @@ public class Configuration {
      */
     public void addURLIfMissing(int index, String title, String location, int state) {
         for (Item host : hosts.items) {
-            if (host.location.equals(location))
+            if (location.equals(host.location))
                 return;
         }
-        addURL(index, title, location, state);
+        // A pruned or hand-crafted config may have fewer entries than the
+        // fixed index expects; appending is always safe.
+        addURL(Math.min(index, hosts.items.size()), title, location, state);
     }
 
     public void updateURL(String oldURL, String newURL, int newState) {
@@ -200,7 +202,9 @@ public class Configuration {
         public int state;
 
         public boolean isDownloadable() {
-            return location.startsWith("https://") || location.startsWith("http://");
+            // Imported configs may lack fields entirely (Gson leaves them
+            // null); treat those as non-downloadable rather than crashing.
+            return location != null && (location.startsWith("https://") || location.startsWith("http://"));
         }
     }
 

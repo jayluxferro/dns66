@@ -341,6 +341,24 @@ public class RuleDatabaseTest {
     }
 
     @Test
+    public void testSingleLabelLinesStayExact() throws Exception {
+        RuleDatabase db = new RuleDatabase();
+        db.nextBlockedHosts = db.blockedHosts.get();
+        db.nextWildcardBlockedHosts = db.wildcardBlockedHosts.get();
+        db.nextRegexPatterns = db.regexPatterns.get();
+
+        Configuration.Item item = new Configuration.Item();
+        item.location = "sloppy-list";
+        item.state = Configuration.Item.STATE_DENY;
+        // Junk single-label lines in bare-domain lists must not wildcard
+        // ("com" would block all of .com) - they block only themselves.
+        assertTrue(db.loadReader(item, new StringReader("com\nlocalhost\nads.example.com")));
+        assertTrue(db.isBlocked("com"));
+        assertFalse(db.isBlocked("anything.com"));
+        assertTrue(db.isBlocked("anything.ads.example.com")); // multi-label is wild
+    }
+
+    @Test
     public void testHasHostsFilePrefix() {
         assertTrue(RuleDatabase.hasHostsFilePrefix("0.0.0.0 example.com"));
         assertTrue(RuleDatabase.hasHostsFilePrefix("127.0.0.1 example.com"));

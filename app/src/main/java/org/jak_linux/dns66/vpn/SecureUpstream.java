@@ -74,9 +74,17 @@ public abstract class SecureUpstream {
         // The first attempt may use a stale pooled socket; if that fails,
         // retry once with a fresh connection.
         for (int attempt = 0; attempt < 2; attempt++) {
-            SSLSocket socket = pollUsableIdleSocket();
+            SSLSocket socket;
             boolean fresh = false;
-            if (socket == null) {
+            if (attempt == 0) {
+                socket = pollUsableIdleSocket();
+                if (socket == null) {
+                    socket = createSocket();
+                    fresh = true;
+                }
+            } else {
+                // The retry is explicitly fresh: another pooled entry may be
+                // just as stale as the one that failed.
                 socket = createSocket();
                 fresh = true;
             }

@@ -149,9 +149,12 @@ public class RuleDatabase {
         }
         // Manually added regular expressions (matched against the
         // lower-case host name).
-        for (Pattern pattern : regexPatterns.get().values()) {
+        LinkedHashMap<String, Pattern> patterns = regexPatterns.get();
+        if (!patterns.isEmpty()) {
+        for (Pattern pattern : patterns.values()) {
             if (pattern.matcher(host).matches())
                 return true;
+        }
         }
         return false;
     }
@@ -314,7 +317,10 @@ public class RuleDatabase {
                         // Lines with an 0.0.0.0/127.0.0.1 prefix are hosts-file
                         // entries and block exactly what they name; bare lines
                         // are wildcard-style domain lists (see addHost).
-                        addHost(item, host, !hasHostsFilePrefix(line));
+                        // Single-label bare lines (junk like "localhost" or a
+                        // stray "com" in sloppy lists) stay exact: wildcarding
+                        // them would block a whole TLD's subtree.
+                        addHost(item, host, !hasHostsFilePrefix(line) && host.indexOf('.') != -1);
                     }
                 }
             }

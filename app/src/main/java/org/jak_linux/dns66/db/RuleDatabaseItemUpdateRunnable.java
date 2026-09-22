@@ -121,7 +121,10 @@ class RuleDatabaseItemUpdateRunnable implements Runnable {
         }catch (IOException e) {
             parentTask.addError(item, context.getString(R.string.unknown_error_s, e.toString()));
         } finally {
-            parentTask.addDone(item);
+            // A cancelled run finishing in the background must not poke the
+            // task's progress state after postExecute already wrapped up.
+            if (!parentTask.isCancelled())
+                parentTask.addDone(item);
             if (connection != null)
                 connection.disconnect();
         }

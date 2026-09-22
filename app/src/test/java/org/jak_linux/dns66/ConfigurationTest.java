@@ -51,12 +51,9 @@ public class ConfigurationTest {
 
     @Test
     public void testIsDownloadable() {
-        try {
-            newItemForLocation(null).isDownloadable();
-            fail("Was null");
-        } catch (NullPointerException e) {
-            // OK
-        }
+        // Null locations come from configs missing the field; they are not
+        // downloadable (and must not crash the bind path).
+        assertFalse("null not downloadable", newItemForLocation(null).isDownloadable());
 
         assertTrue("http:// URI downloadable", newItemForLocation("http://example.com").isDownloadable());
         assertTrue("https:// URI downloadable", newItemForLocation("https://example.com").isDownloadable());
@@ -244,6 +241,17 @@ public class ConfigurationTest {
         }
     }
 
+
+    @Test
+    public void testMigrationWithEmptyHostsList() throws Exception {
+        // A pruned config with no hosts entries must not crash the fixed
+        // index inserts; the defaults are appended.
+        String pruned = "{\"version\": 2, \"minorVersion\": 3, \"hosts\": {\"enabled\": true, \"items\": []}}";
+        Configuration config = Configuration.read(new java.io.StringReader(pruned));
+        assertEquals(5, config.minorVersion);
+        assertFalse(config.hosts.items.isEmpty());
+        assertTrue(config.watchDog);
+    }
 
     @Test
     public void testMigrationToMinorVersion4() throws Exception {

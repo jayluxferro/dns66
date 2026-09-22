@@ -385,6 +385,10 @@ public class AdVpnService extends VpnService implements Handler.Callback {
     }
 
     private void stopVpn() {
+        // From here the service is going away: status updates must not call
+        // startForeground anymore (queued STOPPING/STOPPED messages from the
+        // dying VPN thread land on the main looper before onDestroy).
+        destroying = true;
         Log.i(TAG, "Stopping Service");
         if (vpnThread != null)
             stopVpnThread();

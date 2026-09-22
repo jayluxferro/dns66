@@ -92,6 +92,9 @@ public class ItemRecyclerViewAdapter extends RecyclerView.Adapter<ItemRecyclerVi
                     ? R.string.use_dns_server : R.string.do_not_use_dns_server);
         }
         String[] states = context.getResources().getStringArray(R.array.item_states);
+        // An imported config can carry out-of-range states; crash-proof
+        if (state < 0 || state >= states.length)
+            return "";
         return states[state];
     }
 
@@ -147,7 +150,8 @@ public class ItemRecyclerViewAdapter extends RecyclerView.Adapter<ItemRecyclerVi
                         iconView.setImageDrawable(context.getDrawable(R.drawable.ic_state_allow));
                         break;
                 }
-                iconView.setContentDescription(context.getResources().getStringArray(R.array.item_states)[item.state]);
+                if (item.state >= 0 && item.state < 3) // imported configs can carry junk states
+                    iconView.setContentDescription(context.getResources().getStringArray(R.array.item_states)[item.state]);
             }
 
         }

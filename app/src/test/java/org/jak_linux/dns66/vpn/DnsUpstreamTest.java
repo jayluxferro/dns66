@@ -27,6 +27,17 @@ import static org.junit.Assert.assertThrows;
 public class DnsUpstreamTest {
 
     @Test
+    public void testSchemeCaseInsensitive() throws Exception {
+        assertEquals(DnsUpstream.Protocol.DOH, DnsUpstream.parse("HTTPS://1.1.1.1/dns-query").protocol);
+        assertEquals(DnsUpstream.Protocol.DOT, DnsUpstream.parse("TLS://9.9.9.9").protocol);
+    }
+
+    @Test
+    public void testJunkAfterBracketRejected() {
+        assertThrows(IllegalArgumentException.class, () -> DnsUpstream.parse("tls://[::1] :853"));
+    }
+
+    @Test
     public void plainIpv4DefaultsToPort53() throws Exception {
         DnsUpstream upstream = DnsUpstream.parse("192.0.2.1");
 

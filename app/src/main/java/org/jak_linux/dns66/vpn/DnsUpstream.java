@@ -70,7 +70,7 @@ public class DnsUpstream {
         if (location == null || location.isEmpty())
             throw new UnknownHostException("Empty DNS server location");
 
-        if (location.startsWith("https://")) {
+        if (startsWithIgnoreCase(location, "https://")) {
             URI uri = new URI(location);
             String host = uri.getHost();
             if (host == null || uri.getPath() == null || uri.getPath().isEmpty())
@@ -84,7 +84,7 @@ public class DnsUpstream {
         }
 
         String remainder = location;
-        if (location.startsWith("tls://")) {
+        if (startsWithIgnoreCase(location, "tls://")) {
             remainder = location.substring("tls://".length());
             HostAndPort hp = parseHostAndPort(remainder, DEFAULT_DOT_PORT);
             return new DnsUpstream(Protocol.DOT, hp.host, hp.port, null, null);
@@ -95,6 +95,11 @@ public class DnsUpstream {
         return new DnsUpstream(Protocol.PLAIN, hp.host, hp.port, null, address);
     }
 
+    private static boolean startsWithIgnoreCase(String s, String prefix) {
+        return s.length() >= prefix.length()
+                && s.regionMatches(true, 0, prefix, 0, prefix.length());
+    }
+
     private static HostAndPort parseHostAndPort(String s, int defaultPort) {
         // [2001:db8::1]:53 style
         if (s.startsWith("[")) {
@@ -103,8 +108,11 @@ public class DnsUpstream {
                 throw new IllegalArgumentException("Missing ] in address: " + s);
             String host = s.substring(1, close);
             int port = defaultPort;
-            if (s.length() > close + 1 && s.charAt(close + 1) == ':')
+            if (s.length() > close + 1) {
+                if (s.charAt(close + 1) != ':')
+                    throw new IllegalArgumentException("Unexpected characters after address: " + s);
                 port = parsePort(s.substring(close + 2));
+            }
             return new HostAndPort(host, port);
         }
         int colon = s.lastIndexOf(':');

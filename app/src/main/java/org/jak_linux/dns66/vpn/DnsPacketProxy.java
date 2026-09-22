@@ -39,7 +39,7 @@ import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.util.ArrayList;
-import java.util.IdentityHashMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -75,10 +75,12 @@ public class DnsPacketProxy {
     private VpnService vpnService;
     ArrayList<DnsUpstream> upstreamDnsServers = new ArrayList<>();
     /**
-     * Encrypted upstreams (DoT/DoH), created lazily per configured server.
-     * Keyed by identity, as servers are unique instances of {@link DnsUpstream}.
+     * Encrypted upstreams (DoT/DoH), created lazily per configured server,
+     * keyed by the location string: {@link AdVpnThread#configure()} re-parses
+     * the config on every reconnect, and keying by identity would orphan the
+     * previous pools (each holding live TLS sockets) until thread shutdown.
      */
-    private final Map<DnsUpstream, SecureUpstream> secureUpstreams = new IdentityHashMap<>();
+    private final Map<String, SecureUpstream> secureUpstreams = new HashMap<>();
     /**
      * Recreated on every {@link #initialize}: the VPN thread restarts (e.g. on
      * network changes) by exiting run() - which shuts this down - and
@@ -129,7 +131,7 @@ public class DnsPacketProxy {
      */
     SecureUpstream secureUpstreamFor(DnsUpstream upstream) {
         synchronized (secureUpstreams) {
-            SecureUpstream secureUpstream = secureUpstreams.get(upstream);
+            SecureUpstream secureUpstream = secureUpstreams.get(upstream.toString());
             if (secureUpstream == null) {
                 switch (upstream.protocol) {
                     case DOT:
@@ -141,7 +143,7 @@ public class DnsPacketProxy {
                     default:
                         return null;
                 }
-                secureUpstreams.put(upstream, secureUpstream);
+                secureUpstreams.put(upstream.toString(), secureUpstream);
             }
             return secureUpstream;
         }

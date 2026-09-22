@@ -58,10 +58,14 @@ public class DohUpstream extends SecureUpstream {
         InputStream in = socket.getInputStream();
         String statusLine = readLine(in);
         // Skip 1xx interim responses (including their headers); the real
-        // answer follows them.
-        while (isInformational(statusLine)) {
-            String interim;
-            while ((interim = readLine(in)) != null && !interim.isEmpty()) {
+        // answer follows them. Capped: a hostile server could feed endless
+        // interims, each read resetting the socket timeout and pinning the
+        // resolver thread.
+        for (int interim = 0; isInformational(statusLine); interim++) {
+            if (interim >= 4)
+                throw new IOException("Too many interim responses");
+            String line;
+            while ((line = readLine(in)) != null && !line.isEmpty()) {
                 // Ignore interim headers
             }
             statusLine = readLine(in);
@@ -72,7 +76,10 @@ public class DohUpstream extends SecureUpstream {
         int contentLength = -1;
         boolean chunked = false;
         String line;
+        int headerLines = 0;
         while ((line = readLine(in)) != null && !line.isEmpty()) {
+            if (++headerLines > 128)
+                throw new IOException("Too many header lines");
             int colon = line.indexOf(':');
             if (colon < 0)
                 continue;

@@ -51,7 +51,7 @@ public class VpnWatchdogTest {
         assertEquals(1000, watchdog.getPollTimeout());
         watchdog.lastPacketReceived = 1;
         watchdog.lastPacketSent = 2;
-        assertEquals(10000, watchdog.getPollTimeout());
+        assertEquals(15000, watchdog.getPollTimeout());
     }
 
     @Test
