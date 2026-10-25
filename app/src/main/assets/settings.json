@@ -10,98 +10,38 @@
     "enabled": true,
     "items": [
       {
-        "title": "Cloudflare DNS over HTTPS (1.1.1.1)",
-        "location": "https://1.1.1.1/dns-query",
+        "title": "Cloudflare DoH",
+        "location": "https://cloudflare-dns.com/dns-query",
         "state": 1
       },
       {
-        "title": "Cloudflare DNS over HTTPS (1.0.0.1)",
-        "location": "https://1.0.0.1/dns-query",
-        "state": 1
-      },
-      {
-        "title": "Google DNS over HTTPS (8.8.8.8)",
-        "location": "https://8.8.8.8/dns-query",
-        "state": 0
-      },
-      {
-        "title": "Google DNS over HTTPS (8.8.4.4)",
-        "location": "https://8.8.4.4/dns-query",
-        "state": 0
-      },
-      {
-        "title": "Quad9 DNS over HTTPS (secured)",
-        "location": "https://9.9.9.9/dns-query",
-        "state": 0
-      },
-      {
-        "title": "Quad9 DNS over HTTPS (secured, secondary)",
-        "location": "https://149.112.112.112/dns-query",
-        "state": 0
-      },
-      {
-        "title": "Quad9 DNS over HTTPS (unsecured)",
-        "location": "https://9.9.9.10/dns-query",
-        "state": 0
-      },
-      {
-        "title": "Cloudflare DNS over HTTPS (malware blocking)",
-        "location": "https://1.1.1.2/dns-query",
-        "state": 0
-      },
-      {
-        "title": "Cloudflare DNS over HTTPS (malware + adult)",
-        "location": "https://1.1.1.3/dns-query",
-        "state": 0
-      },
-      {
-        "title": "Cloudflare DNS over TLS",
-        "location": "tls://1.1.1.1",
-        "state": 0
-      },
-      {
-        "title": "Quad9 DNS over TLS (secured)",
-        "location": "tls://9.9.9.9",
-        "state": 0
-      },
-      {
-        "title": "Quad9 DNS over TLS (secured, secondary)",
-        "location": "tls://149.112.112.112",
-        "state": 0
-      },
-      {
-        "title": "Cloudflare DNS (1.1.1.1)",
+        "title": "Cloudflare",
         "location": "1.1.1.1",
+        "state": 1
+      },
+      {
+        "title": "Quad9 DoH",
+        "location": "https://dns.quad9.net/dns-query",
         "state": 0
       },
       {
-        "title": "Cloudflare DNS (1.0.0.1)",
-        "location": "1.0.0.1",
+        "title": "Google DoH",
+        "location": "https://dns.google/dns-query",
         "state": 0
       },
       {
-        "title": "Google DNS (8.8.8.8)",
-        "location": "8.8.8.8",
+        "title": "Quad9 DoT",
+        "location": "tls://dns.quad9.net",
         "state": 0
       },
       {
-        "title": "Google DNS (8.8.4.4)",
-        "location": "8.8.4.4",
-        "state": 0
-      },
-      {
-        "title": "Quad9 DNS (secured)",
+        "title": "Quad9",
         "location": "9.9.9.9",
         "state": 0
       },
       {
-        "title": "Cloudflare DNS (IPv6)",
-        "location": "2606:4700:4700::1111",
-        "state": 0
-      },
-      {
-        "title": "Google DNS (IPv6)",
-        "location": "2001:4860:4860::8888",
+        "title": "Google",
+        "location": "8.8.8.8",
         "state": 0
       }
     ]
@@ -111,7 +51,12 @@
     "automaticRefresh": false,
     "items": [
       {
-        "title": "StevenBlack's unified hosts file",
+        "title": "SperixLabs Blocklist",
+        "location": "https://raw.githubusercontent.com/jayluxferro/block-ads/refs/heads/main/extra_list/hosts.txt",
+        "state": 0
+      },
+      {
+        "title": "StevenBlack Unified Hosts",
         "location": "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
         "state": 0
       },
@@ -121,28 +66,58 @@
         "state": 0
       },
       {
-        "title": "AdAway default blocklist",
+        "title": "AdAway Default",
         "location": "https://adaway.org/hosts.txt",
         "state": 0
       },
       {
-        "title": "block-ads (combined)",
-        "location": "https://raw.githubusercontent.com/jayluxferro/block-ads/master/extra_list/hosts.txt",
+        "title": "AdGuard DNS Filter",
+        "location": "https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt",
         "state": 0
       },
       {
-        "title": "Dan Pollock's hosts file",
+        "title": "Dan Pollock's Hosts",
         "location": "https://someonewhocares.org/hosts/hosts",
         "state": 0
       },
       {
-        "title": "Peter Lowe's ad server list",
-        "location": "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=1&mimetype=plaintext",
+        "title": "Anudeep Ad Servers",
+        "location": "https://raw.githubusercontent.com/anudeepND/blacklist/master/adservers.txt",
         "state": 0
       },
       {
-        "title": "abuse.ch URLhaus (live malware domains)",
-        "location": "https://urlhaus.abuse.ch/downloads/hostfile/",
+        "title": "Disconnect.me Ads",
+        "location": "https://s3.amazonaws.com/lists.disconnect.me/simple_ad.txt",
+        "state": 0
+      },
+      {
+        "title": "NoTrack Blocklist",
+        "location": "https://gitlab.com/quidsup/notrack-blocklists/raw/master/notrack-blocklist.txt",
+        "state": 0
+      },
+      {
+        "title": "Disconnect.me Tracking",
+        "location": "https://s3.amazonaws.com/lists.disconnect.me/simple_tracking.txt",
+        "state": 0
+      },
+      {
+        "title": "URLhaus Malware Domains",
+        "location": "https://urlhaus-filter.pages.dev/urlhaus-filter-hosts.txt",
+        "state": 0
+      },
+      {
+        "title": "NoTrack Malware",
+        "location": "https://gitlab.com/quidsup/notrack-blocklists/raw/master/notrack-malware.txt",
+        "state": 0
+      },
+      {
+        "title": "NoCoin Miners",
+        "location": "https://raw.githubusercontent.com/hoshsadiq/adblock-nocoin-list/master/hosts.txt",
+        "state": 0
+      },
+      {
+        "title": "WindowsSpyBlocker Spy",
+        "location": "https://raw.githubusercontent.com/crazy-max/WindowsSpyBlocker/master/data/hosts/spy.txt",
         "state": 0
       }
     ]
