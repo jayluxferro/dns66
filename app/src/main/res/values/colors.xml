@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="colorBackgroundSecondary">#ECEFF1</color>
-    <color name="colorStateImage">#B0BEC5</color>
-    <color name="colorPrimary">#009688</color>
-    <color name="colorPrimaryDark">#00675b</color>
-    <color name="colorAccent">#40c4ff</color>
-    <color name="stateError">#F44336</color>
+    <!-- Modern indigo/slate identity: privacy-first, with a coordinated accent.
+         Replaces the dated default teal (Material 1) palette. -->
+    <color name="colorPrimary">#4F46E5</color>
+    <color name="colorPrimaryDark">#3730A3</color>
+    <color name="colorAccent">#6366F1</color>
+    <color name="colorBackgroundSecondary">#EEF2F7</color>
+    <color name="colorStateImage">#94A3B8</color>
+    <color name="stateError">#DC2626</color>
 </resources>

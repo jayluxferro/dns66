@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="colorBackgroundSecondary">#424242</color>
-    <color name="colorStateImage">#B0BEC5</color>
+    <!-- Night palette: lighter indigo tints for contrast on a dark surface,
+         slate surfaces instead of flat grey. -->
+    <color name="colorPrimary">#818CF8</color>
+    <color name="colorPrimaryDark">#4F46E5</color>
+    <color name="colorAccent">#A5B4FC</color>
+    <color name="colorBackgroundSecondary">#1E293B</color>
+    <color name="colorStateImage">#64748B</color>
+    <color name="stateError">#F87171</color>
 </resources>
