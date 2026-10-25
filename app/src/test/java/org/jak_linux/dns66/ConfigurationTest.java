@@ -248,7 +248,7 @@ public class ConfigurationTest {
         // index inserts; the defaults are appended.
         String pruned = "{\"version\": 2, \"minorVersion\": 3, \"hosts\": {\"enabled\": true, \"items\": []}}";
         Configuration config = Configuration.read(new java.io.StringReader(pruned));
-        assertEquals(5, config.minorVersion);
+        assertEquals(6, config.minorVersion);
         assertFalse(config.hosts.items.isEmpty());
         assertTrue(config.watchDog);
     }
@@ -268,7 +268,7 @@ public class ConfigurationTest {
                 + "]}}";
         Configuration config = Configuration.read(new java.io.StringReader(oldConfig));
 
-        assertEquals(5, config.minorVersion);
+        assertEquals(6, config.minorVersion);
 
         java.util.List<String> locations = new ArrayList<>();
         for (Configuration.Item item : config.hosts.items)
@@ -278,7 +278,7 @@ public class ConfigurationTest {
         assertFalse(locations.contains("https://mirror.cedia.org.ec/malwaredomains/immortal_domains.txt"));
         assertFalse(locations.contains("https://www.malwaredomainlist.com/hostslist/hosts.txt"));
         assertEquals(1, Collections.frequency(locations, "https://big.oisd.nl/domainswild"));
-        assertEquals(1, Collections.frequency(locations, "https://urlhaus.abuse.ch/downloads/hostfile/"));
+        assertEquals(1, Collections.frequency(locations, "https://urlhaus-filter.pages.dev/urlhaus-filter-hosts.txt"));
         assertEquals(1, Collections.frequency(locations, "https://raw.githubusercontent.com/jayluxferro/block-ads/master/extra_list/hosts.txt"));
         assertTrue(config.watchDog);
         assertTrue(locations.contains("https://example.com/my-hosts"));

@@ -35,7 +35,7 @@ public class Configuration {
     public static final Gson GSON = new Gson();
     static final int VERSION = 2;
     /* Default tweak level */
-    static final int MINOR_VERSION = 5;
+    static final int MINOR_VERSION = 6;
     private static final String TAG = "Configuration";
     public int version = 1;
     public int minorVersion = 0;
@@ -94,6 +94,7 @@ public class Configuration {
                 break;
             case 3:
                 disableURL("https://blokada.org/blocklists/ddgtrackerradar/standard/hosts.txt");
+                break;
             case 4:
                 /* The malwaredomains mirrors are gone and malwaredomainlist.com
                    is unreachable; replaced by maintained lists. */
@@ -104,18 +105,32 @@ public class Configuration {
                 /* oisd big (wildcard-style list; subdomains are matched) and
                    a live malware feed */
                 addURLIfMissing(1, "oisd big (domainswild)", "https://big.oisd.nl/domainswild", Item.STATE_DENY);
-                addURLIfMissing(2, "abuse.ch URLhaus (live malware domains)", "https://urlhaus.abuse.ch/downloads/hostfile/", Item.STATE_DENY);
+                addURLIfMissing(2, "URLhaus malware domains", "https://urlhaus-filter.pages.dev/urlhaus-filter-hosts.txt", Item.STATE_DENY);
 
                 /* Ship all lists active (deny) by default */
                 updateURL("https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts", null, Item.STATE_DENY);
                 updateURL("https://adaway.org/hosts.txt", null, Item.STATE_DENY);
                 updateURL("https://someonewhocares.org/hosts/hosts", null, Item.STATE_DENY);
-                updateURL("https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=1&mimetype=plaintext", null, Item.STATE_DENY);
+                removeURL("https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=1&mimetype=plaintext");
+                break;
             case 5:
                 addURLIfMissing(3, "block-ads (combined)", "https://raw.githubusercontent.com/jayluxferro/block-ads/master/extra_list/hosts.txt", Item.STATE_DENY);
                 /* The watchdog is on by default now that reconnects are
                    reliable; probe wait already exceeds cold DoT/DoH time. */
                 watchDog = true;
+                break;
+            case 6:
+                /* Dead endpoints: peter-lowe's list (502) and the old abuse.ch hostfile
+                   (410). Replace the latter with the maintained filter. */
+                removeURL("https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=0&mimetype=plaintext");
+                removeURL("https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=1&mimetype=plaintext");
+                updateURL("https://urlhaus.abuse.ch/downloads/hostfile/",
+                          "https://urlhaus-filter.pages.dev/urlhaus-filter-hosts.txt",
+                          Item.STATE_DENY);
+                addURLIfMissing(hosts.items.size(), "AdGuard DNS Filter",
+                                "https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt",
+                                Item.STATE_DENY);
+                break;
         }
         this.minorVersion = level;
     }
